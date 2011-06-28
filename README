@@ -1,24 +1,7 @@
 Dependencies
 ------------
 Clusto>=0.6
-mako
-IPy
 boto>=2.0b3
+IPy
 
 https://github.com/clusto/clusto
-http://www.secdev.org/projects/scapy/files/scapy-latest.zip
-
-Usage
------
-from diggext import *
-
-# Create a server, assign it an explicit IP
-server = PenguinServer('s0001')
-server.bind_ip_to_osport('10.2.0.1', 'eth0')
-
-# Create a PDU, connect the server to it
-pwr = PowerTowerXM('dc0-000-pwr1')
-server.connect_ports('pwr-nema-5', 1, pwr, 'aa1')
-
-# Reboot the server using the PDU
-server.reboot()

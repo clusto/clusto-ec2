@@ -10,5 +10,5 @@ class EC2Zone(BasicZone):
     def __init__(self, name_driver_entity, **kwargs):
         super(EC2Zone, self).__init__(name_driver_entity, **kwargs)
 
-        self.set_attr(key='aws', subkey='ec2_placement', value=kwargs['placement'])
+        self.set_attr(key='aws', subkey='ec2_placement', value=kwargs.get('placement', name_driver_entity))
     

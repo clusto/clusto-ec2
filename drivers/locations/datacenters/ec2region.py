@@ -10,6 +10,6 @@ class EC2Region(BasicDatacenter):
     def __init__(self, name_driver_entity, **kwargs):
         super(EC2Region, self).__init__(name_driver_entity, **kwargs)
 
-        self.set_attr(key='aws', subkey='ec2_region', value=kwargs['region'])
+        self.set_attr(key='aws', subkey='ec2_region', value=kwargs.get('region', name_driver_entity))
 
         

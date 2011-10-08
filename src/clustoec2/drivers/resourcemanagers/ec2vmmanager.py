@@ -207,6 +207,7 @@ class EC2VMManager(ResourceManager):
                                     security_groups=security_groups)
 
             i = reservation.instances[0]
+            i.add_tag('Name', thing.name)
         
         return (self._instance_to_dict(i), True)
 

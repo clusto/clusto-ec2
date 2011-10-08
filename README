@@ -3,5 +3,6 @@ Dependencies
 Clusto>=0.6
 boto>=2.0b3
 IPy
+Mako
 
-https://github.com/clusto/clusto
+https://github.com/clusto/clusto-ec2

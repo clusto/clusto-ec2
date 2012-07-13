@@ -1,0 +1,8 @@
+*.pyc
+*~
+*.swp
+*.db
+build
+dist
+*.egg-info
+env/

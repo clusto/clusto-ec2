@@ -18,10 +18,10 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
 
         instance = manager._get_instance_from_resource(res.value)
         return instance
-    
+
     def get_state(self):
         """Get the instance state."""
-        
+
         return self._instance.state
 
     def console(self, *args, **kwargs):
@@ -30,7 +30,7 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
 
         return console.output
 
-    
+
     def update_metadata(self, *args, **kwargs):
 
         while True:
@@ -52,6 +52,26 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
             time.sleep(2)
 
     def clear_metadata(self, *args, **kwargs):
-
         self.del_attrs('ip')
-        
+
+    def shutdown(self, captcha=True):
+        if captcha and not self._power_captcha('shutdown'):
+            return False
+        self._instance.stop()
+
+    def start(self, captcha=True):
+        if captcha and not self._power_captcha('start'):
+            return False
+        self._instance.start()
+
+    def reboot(self, captcha=True):
+        if captcha and not self._power_captcha('reboot'):
+            return False
+        self._instance.reboot()
+
+    def destroy(self, captcha=True):
+        if captcha and not self._power_captcha('destroy'):
+            return False
+        self._instance.terminate()
+        return True
+

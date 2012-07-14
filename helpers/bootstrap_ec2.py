@@ -8,6 +8,7 @@ import sys
 
 import clusto
 from clusto import script_helper
+from clusto import drivers
 from clustoec2 import drivers as ec2_drivers
 
 
@@ -28,6 +29,9 @@ class BootstrapEc2(script_helper.Script):
             help='Name of the EC2 VM Manager you want to use/initialize')
         parser.add_argument('--ip-manager', '-i', default='ec2ipman',
             help='Name of the EC2 IP Manager you want to use/initialize')
+        parser.add_argument('--add-to-pool', '-p', default=None,
+            help='If given, amazon "location" objects will be inserted in '
+                'the given pool')
 
     def add_subparser(self, subparsers):
         parser = self._setup_subparser(subparsers)
@@ -64,6 +68,10 @@ class BootstrapEc2(script_helper.Script):
 
         conn = ec2vmman._ec2_connection()
 
+        container_pool = None
+        if args.add_to_pool:
+            container_pool = clusto.get_or_create(
+                args.add_to_pool, drivers.pool.Pool)
         self.info('Creating all available regions')
         for region in conn.get_all_regions():
             curconn = ec2vmman._ec2_connection(region.name)
@@ -72,6 +80,8 @@ class BootstrapEc2(script_helper.Script):
                 region=region.name)
             self.debug('Created "%s" region' % (region.name, ))
 #           Create all zones
+            self.info('Creating all availability zones for region %s' %
+                (region.name,))
             for zone in curconn.get_all_zones():
                 zone_entity = clusto.get_or_create(zone.name,
                     ec2_drivers.EC2Zone,
@@ -81,6 +91,10 @@ class BootstrapEc2(script_helper.Script):
                     region_entity.insert(zone_entity)
                 self.debug('Inserted "%s" zone in "%s" region' %
                     (zone.name, region.name, ))
+            if container_pool and region_entity not in container_pool:
+                self.debug('Adding region %s to pool %s' %
+                    (region.name, args.add_to_pool,))
+                container_pool.insert(region_entity)
         self.info('Finished, AWS objects should now be in the database')
 
 

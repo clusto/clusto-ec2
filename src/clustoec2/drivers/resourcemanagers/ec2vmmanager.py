@@ -3,6 +3,7 @@ from clusto.exceptions import ResourceException
 
 
 import boto
+from boto.ec2 import blockdevicemapping
 from mako.template import Template
 
 class EC2VMManagerException(ResourceException):
@@ -81,6 +82,16 @@ class EC2VMManager(ResourceManager):
             'instance_id':instance.id}
 
         return d
+
+    def _create_ephemeral_storage(self):
+#       Apparently amazon only gives you 4 ephemeral drives
+        number = 4
+        mapping = blockdevicemapping.BlockDeviceMapping()
+        for block in range(0, number):
+            eph = blockdevicemapping.BlockDeviceType()
+            eph.ephemeral_name = 'ephemeral%d' % (block, )
+            mapping['/dev/sd%s' % (chr(ord('b') + block),)] = eph
+        return mapping
 
     def _get_instance_from_resource(self, resource):
 
@@ -198,12 +209,18 @@ class EC2VMManager(ResourceManager):
 
             c = self._ec2_connection(region)
             image = c.get_image(image_id)
-
+#           Unless you explicitly skip the creation of ephemeral drives, these
+#           will get created, you're already paying for them after all
+            block_mapping = None
+            if not thing.attr_values(key='aws', subkey='skip_ephemeral_drives',
+                merge_container_attrs=True):
+                block_mapping = self._create_ephemeral_storage()
             reservation = image.run(instance_type=instance_type,
-                                    placement=placement,
-                                    key_name=key_name,
-                                    user_data=user_data,
-                                    security_groups=security_groups)
+                placement=placement,
+                key_name=key_name,
+                user_data=user_data,
+                security_groups=security_groups,
+                block_device_map=block_mapping)
 
             i = reservation.instances[0]
             i.add_tag('Name', thing.name)

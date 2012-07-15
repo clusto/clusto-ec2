@@ -212,7 +212,7 @@ class EC2VMManager(ResourceManager):
 #           Unless you explicitly skip the creation of ephemeral drives, these
 #           will get created, you're already paying for them after all
             block_mapping = None
-            if not thing.attr_values(key='aws', subkey='skip_ephemeral_drives',
+            if not thing.attr_values(key='aws', subkey='ec2_skip_ephemeral',
                 merge_container_attrs=True):
                 block_mapping = self._create_ephemeral_storage()
             reservation = image.run(instance_type=instance_type,

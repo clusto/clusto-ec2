@@ -72,7 +72,25 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
     def destroy(self, captcha=True):
         if captcha and not self._power_captcha('destroy'):
             return False
+        instance_id = self._instance.id
+        volumes = self._instance.connection.get_all_volumes(
+            filters={'attachment.instance-id': instance_id})
         self._instance.terminate()
+        while True:
+            state = self._instance.update()
+            if state != 'terminated':
+                print ('Instance still in the "%s" state, waiting '
+                    '5 more seconds...' % (state,))
+                time.sleep(5)
+            else:
+                break
+#       destroy all volumes
+        for vol in volumes:
+            dev = vol.attach_data.device.split('/')[-1]
+#           root device (sda1) will disappear along with the instance
+            if dev != 'sda1':
+                vol.delete()
+
         return True
 
     def reconcile_ebs_volumes(self):

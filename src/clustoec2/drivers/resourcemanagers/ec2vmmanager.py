@@ -5,6 +5,7 @@ from clusto.exceptions import ResourceException
 import boto
 from boto.ec2 import blockdevicemapping
 from mako.template import Template
+import time
 
 class EC2VMManagerException(ResourceException):
     pass
@@ -223,6 +224,16 @@ class EC2VMManager(ResourceManager):
                 block_device_map=block_mapping)
 
             i = reservation.instances[0]
+            count = 0
+            while True:
+                state = i.update()
+                if state != 'running' and count < 5:
+                    print ('Instance still in the "%s" state, waiting '
+                        '5 more seconds...' % (state,))
+                    count = count + 1
+                    time.sleep(5)
+                else:
+                    break
             i.add_tag('Name', thing.name)
 
         return (self._instance_to_dict(i), True)

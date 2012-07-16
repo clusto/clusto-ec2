@@ -75,3 +75,68 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
         self._instance.terminate()
         return True
 
+    def reconcile_ebs_volumes(self):
+        volumes = {}
+        conn = self._instance.connection
+#       Seems important to grab the placement from the instance data in the
+#       unlikely scenario the clusto data doesn't match?
+        zone = self._instance.placement
+        instance_id = self._instance.id
+        for attr in self.attrs(key='ebs', merge_container_attrs=True):
+            if attr.subkey not in volumes.keys():
+                volumes[attr.subkey] = {}
+            try:
+                volumes[attr.subkey]['size'] = int(attr.value)
+            except ValueError:
+                if attr.value.startswith('vol-'):
+                    volumes[attr.subkey]['vol-id'] = attr.value
+                else:
+                    volumes[attr.subkey]['extra'] = attr.value
+
+        for dev, data in volumes.items():
+            device = '/dev/%s' % (dev, )
+            vol = None
+            if 'vol-id' not in data.keys():
+#               create the volumes w/ default size of 10G
+                vol = conn.create_volume(int(data['size']), zone)
+                self.add_attr(key='ebs', subkey=dev, value=vol.id)
+            else:
+                try:
+                    vol = conn.get_all_volumes(volume_ids=[data['vol-id']])
+                    vol = vol[0]
+                except:
+#                   This volume does not exist anymore
+                    self.del_attrs(key='ebs', subkey=dev)
+            if vol:
+#               Attach the volume if it's not attached
+                if not vol.attachment_state():
+                    vol.attach(instance_id, device)
+                else:
+#                   Ok so it's attached, but what if it's attached to something
+#                   else? if that is the case we should clear the attrs
+                    try:
+                        is_mine = conn.get_all_volumes(
+                            volume_ids=[data['vol-id']],
+                            filters={'attachment.instance-id': instance_id})
+                    except:
+                        is_mine = False
+                    if is_mine:
+                        vol.add_tag('Name', '%s:%s' % (self.name, device,))
+                    else:
+                        self.del_attrs(key='ebs', subkey=dev)
+
+#       Ok so now from aws to clusto
+        volumes = conn.get_all_volumes(
+            filters={'attachment.instance-id': instance_id})
+
+        for vol in volumes:
+            device = vol.attach_data.device
+            dev = device.split('/')[-1]
+#           update attrs that are not in our db
+            if not self.attrs(key='ebs', subkey=dev):
+                self.add_attr(key='ebs', subkey=dev, value=int(vol.size))
+                self.add_attr(key='ebs', subkey=dev, value=vol.id)
+            tag = '%s:%s' % (self.name, device)
+            if 'Name' not in vol.tags or vol.tags['Name'] != tag:
+                vol.add_tag('Name', tag)
+

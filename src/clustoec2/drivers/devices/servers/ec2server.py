@@ -59,7 +59,7 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
             return False
         self._instance.stop()
 
-    def start(self, captcha=True):
+    def start(self, captcha=False):
         if captcha and not self._power_captcha('start'):
             return False
         self._instance.start()
@@ -69,14 +69,14 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
             return False
         self._instance.reboot()
 
-    def destroy(self, captcha=True):
+    def destroy(self, captcha=True, wait=True):
         if captcha and not self._power_captcha('destroy'):
             return False
         instance_id = self._instance.id
         volumes = self._instance.connection.get_all_volumes(
             filters={'attachment.instance-id': instance_id})
         self._instance.terminate()
-        while True:
+        while wait:
             state = self._instance.update()
             if state != 'terminated':
                 print ('Instance still in the "%s" state, waiting '

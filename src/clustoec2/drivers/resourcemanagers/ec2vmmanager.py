@@ -239,7 +239,7 @@ class EC2VMManager(ResourceManager):
         return (self._instance_to_dict(i), True)
 
 
-    def deallocate(self, thing, resource=(), number=True):
+    def deallocate(self, thing, resource=(), number=True, captcha=True, wait=True):
         """deallocates a resource from the given thing."""
 
         if thing.attr_value(key='aws', subkey='ec2_allow_termination',
@@ -248,9 +248,12 @@ class EC2VMManager(ResourceManager):
 
         if not resource:
             for resource in self.resources(thing):
-                if thing.destroy():
+                if thing.destroy(captcha, wait):
                     super(EC2VMManager, self).deallocate(thing, resource.value, number)
                     thing.clear_metadata()
                     thing.entity.delete()
+                    return True
+                else:
+                    return False
         else:
-            super(EC2VMManager, self).deallocate(thing, resource.value, number)
+            return super(EC2VMManager, self).deallocate(thing, resource.value, number)

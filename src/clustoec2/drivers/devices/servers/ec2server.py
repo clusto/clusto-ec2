@@ -100,16 +100,19 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
 #       unlikely scenario the clusto data doesn't match?
         zone = self._instance.placement
         instance_id = self._instance.id
-        for attr in self.attrs(key='ebs', merge_container_attrs=True):
-            if attr.subkey not in volumes.keys():
-                volumes[attr.subkey] = {}
+        for attr in self.attrs(key='aws', merge_container_attrs=True):
+            if not attr.subkey.startswith('ebs_'):
+                continue
+            volume = '_'.join(attr.subkey.split('_')[1:])
+            if volume not in volumes.keys():
+                volumes[volume] = {}
             try:
-                volumes[attr.subkey]['size'] = int(attr.value)
+                volumes[volume]['size'] = int(attr.value)
             except ValueError:
                 if attr.value.startswith('vol-'):
-                    volumes[attr.subkey]['vol-id'] = attr.value
+                    volumes[volume]['vol-id'] = attr.value
                 else:
-                    volumes[attr.subkey]['extra'] = attr.value
+                    volumes[volume]['extra'] = attr.value
 
         for dev, data in volumes.items():
             device = '/dev/%s' % (dev, )
@@ -117,14 +120,14 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
             if 'vol-id' not in data.keys():
 #               create the volumes w/ default size of 10G
                 vol = conn.create_volume(int(data['size']), zone)
-                self.add_attr(key='ebs', subkey=dev, value=vol.id)
+                self.add_attr(key='aws', subkey='ebs_%s' % (dev,), value=vol.id)
             else:
                 try:
                     vol = conn.get_all_volumes(volume_ids=[data['vol-id']])
                     vol = vol[0]
                 except:
 #                   This volume does not exist anymore
-                    self.del_attrs(key='ebs', subkey=dev)
+                    self.del_attrs(key='aws', subkey='ebs_%s' % (dev,))
             if vol:
 #               Attach the volume if it's not attached
                 if not vol.attachment_state():
@@ -141,7 +144,7 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
                     if is_mine:
                         vol.add_tag('Name', '%s:%s' % (self.name, device,))
                     else:
-                        self.del_attrs(key='ebs', subkey=dev)
+                        self.del_attrs(key='aws', subkey='ebs_%s' % (dev,))
 
 #       Ok so now from aws to clusto
         volumes = conn.get_all_volumes(
@@ -151,9 +154,10 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
             device = vol.attach_data.device
             dev = device.split('/')[-1]
 #           update attrs that are not in our db
-            if not self.attrs(key='ebs', subkey=dev):
-                self.add_attr(key='ebs', subkey=dev, value=int(vol.size))
-                self.add_attr(key='ebs', subkey=dev, value=vol.id)
+            if not self.attrs(key='aws', subkey='ebs_%s' % (dev,)):
+                self.add_attr(key='aws', subkey='ebs_%s' % (dev,),
+                    value=int(vol.size))
+                self.add_attr(key='aws', subkey='ebs_%s' % (dev,), value=vol.id)
             tag = '%s:%s' % (self.name, device)
             if 'Name' not in vol.tags or vol.tags['Name'] != tag:
                 vol.add_tag('Name', tag)

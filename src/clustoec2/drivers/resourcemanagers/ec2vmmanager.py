@@ -144,13 +144,13 @@ class EC2VMManager(ResourceManager):
 
         if not instance_type:
             raise ResourceException('No instance type specified for %s'
-                                    % thing.name)
+                                    % (thing.name,))
 
         image_id = thing.attr_value(key='aws', subkey='ec2_ami',
                                     merge_container_attrs=True)
 
         if not image_id:
-            raise ResourceException('No AMI specified for %s' % thing.name)
+            raise ResourceException('No AMI specified for %s' % (thing.name,))
 
         placement = thing.attr_value(key='aws', subkey='ec2_placement',
                                      merge_container_attrs=True)
@@ -172,14 +172,14 @@ class EC2VMManager(ResourceManager):
                 'than one instance')
         elif len(res) == 1:
             raise ResourceException('%s is already running as %s'
-                                    % res[0].value)
+                                    % (res[0].value,)
         else:
             c = self._connection(region)
             image = c.get_image(image_id)
 #           Unless you explicitly skip the creation of ephemeral drives, these
 #           will get created, you're already paying for them after all
             block_mapping = None
-            if not thing.attr_values(key='aws', subkey='ec2_skip_ephemeral',
+            if not thing.attr_value(key='aws', subkey='ec2_skip_ephemeral',
                 merge_container_attrs=True):
                 block_mapping = self._create_ephemeral_storage()
             reservation = image.run(instance_type=instance_type,

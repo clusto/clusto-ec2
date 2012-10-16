@@ -32,6 +32,8 @@ class BootstrapEc2(script_helper.Script):
         parser.add_argument('--add-to-pool', '-p', default=None,
             help='If given, amazon "location" objects will be inserted in '
                 'the given pool')
+        parser.add_argument('--no-import', default=False, action='store_true',
+            help='Skip importing existing resources')
 
     def add_subparser(self, subparsers):
         parser = self._setup_subparser(subparsers)
@@ -52,21 +54,7 @@ class BootstrapEc2(script_helper.Script):
         else:
             ec2vmman = ec2vmman.pop()
 
-        self.debug('Grab or create the IP Manager')
-        ec2ipman = clusto.get_entities(clusto_types=[ec2_drivers.EC2IPManager])
-        if not ec2ipman:
-            if not args.aws_key and not args.aws_secret_key:
-                raise Exception("you must specify both an aws_access_key_id "
-                    "and an aws_secret_access_key if you don't already have "
-                    "an EC2IPManager")
-            ec2ipman = ec2_drivers.EC2IPManager(args.ip_manager,
-                aws_access_key_id=args.aws_key,
-                aws_secret_access_key=args.aws_secret_key)
-            self.info('Created the "%s" EC2 IPManager' % (args.ip_manager))
-        else:
-            ec2ipman = ec2ipman.pop()
-
-        conn = ec2vmman._ec2_connection()
+        conn = ec2vmman._connection()
 
         container_pool = None
         if args.add_to_pool:
@@ -74,10 +62,12 @@ class BootstrapEc2(script_helper.Script):
                 args.add_to_pool, drivers.pool.Pool)
         self.info('Creating all available regions')
         for region in conn.get_all_regions():
-            curconn = ec2vmman._ec2_connection(region.name)
+            curconn = ec2vmman._connection(region.name)
             region_entity = clusto.get_or_create(region.name,
                 ec2_drivers.EC2Region,
                 region=region.name)
+            region_entity.set_attr(key='aws', subkey='ec2_region',
+                value=region.name)
             self.debug('Created "%s" region' % (region.name, ))
 #           Create all zones
             self.info('Creating all availability zones for region %s' %
@@ -86,6 +76,8 @@ class BootstrapEc2(script_helper.Script):
                 zone_entity = clusto.get_or_create(zone.name,
                     ec2_drivers.EC2Zone,
                     placement=zone.name)
+                zone_entity.set_attr(key='aws', subkey='ec2_placement',
+                    value=zone.name)
                 self.debug('Created "%s" zone' % (zone.name, ))
                 if zone_entity not in region_entity:
                     region_entity.insert(zone_entity)
@@ -96,26 +88,24 @@ class BootstrapEc2(script_helper.Script):
                     (region.name, args.add_to_pool,))
                 container_pool.insert(region_entity)
 
-        self.info('Creating all instances')
-        for reservations in conn.get_all_instances():
-            for instance in reservations.instances:
-                instance_entity = clusto.get_or_create(instance.id,
-                        ec2_drivers.EC2VirtualServer)
-                placement = clusto.get_by_name(instance.placement)
-                if placement not in instance_entity.parents():
-                    placement.insert(instance_entity)
-                instance_entity.add_attr(key='aws', subkey='ec2_instance_type',
-                        value=instance.instance_type)
-                instance_entity.add_attr(key='aws', subkey='ec2_ami',
-                        value=instance.image_id)
-                if instance.key_name is not None:
-                    instance_entity.add_attr(key='aws', subkey='ec2_key_name',
-                            value=instance.key_name)
-                if instance_entity not in ec2vmman.referencers():
-                    ec2vmman.allocate(instance_entity, 
-                            resource={
-                                'placement': instance.placement,
-                                'instance_id': instance.id })
+        if not args.no_import:
+            self.info('Creating all instances')
+            for reservations in conn.get_all_instances():
+                for instance in reservations.instances:
+                    instance_entity = clusto.get_or_create(instance.id,
+                            ec2_drivers.EC2VirtualServer)
+                    placement = clusto.get_by_name(instance.placement)
+                    if placement not in instance_entity.parents():
+                        placement.insert(instance_entity)
+                    instance_entity.set_attr(key='aws', subkey='ec2_instance_type',
+                            value=instance.instance_type)
+                    if instance.key_name is not None:
+                        instance_entity.set_attr(key='aws', subkey='ec2_key_name',
+                                value=instance.key_name)
+                    if instance_entity not in ec2vmman.referencers():
+                        ec2vmman.allocate(instance_entity, instance)
+                        instance_entity.update_metadata()
+                    self.debug('%s is imported' % (instance,))
         self.info('Finished, AWS objects should now be in the database')
 
 

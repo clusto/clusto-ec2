@@ -15,6 +15,9 @@ class EC2VirtualServer(BasicVirtualServer):
     _i = None
     _int_ip_const = 2147483648
 
+    def _int_to_ipy(self, num):
+        return IPy.IP(num + self._int_ip_const)
+
     @property
     def _instance(self):
         """
@@ -55,15 +58,15 @@ class EC2VirtualServer(BasicVirtualServer):
         l = self.attr_values(key='ip', subkey='nic-eth0')
         if l:
             if objects:
-                [ips.append(IPy.IP(_)) for _ in l]
+                [ips.append(self._int_to_ipy(_)) for _ in l]
             else:
-                [ips.append(IPy.IP(_).strNormal()) for _ in l]
+                [ips.append(self._int_to_ipy(_).strNormal()) for _ in l]
         l = self.attr_values(key='ip', subkey='ext-eth0')
         if l:
             if objects:
-                [ips.append(IPy.IP(_)) for _ in l]
+                [ips.append(self._int_to_ipy(_)) for _ in l]
             else:
-                [ips.append(IPy.IP(_).strNormal()) for _ in l]
+                [ips.append(self._int_to_ipy(_).strNormal()) for _ in l]
         return ips
 
     def update_metadata(self, *args, **kwargs):

@@ -13,6 +13,7 @@ class EC2VirtualServer(BasicVirtualServer):
 
     _driver_name = "ec2virtualserver"
     _i = None
+    _int_ip_const = 2147483648
 
     @property
     def _instance(self):
@@ -76,13 +77,13 @@ class EC2VirtualServer(BasicVirtualServer):
             self.set_attr(
                 key='ip',
                 subkey='nic-eth0',
-                value=IPy.IP(self._instance.private_ip_address).int()
+                value=IPy.IP(self._instance.private_ip_address).int() - self._int_ip_const
             )
         if self._instance.ip_address:
             self.set_attr(
                 key='ip',
                 subkey='ext-eth0',
-                value=IPy.IP(self._instance.ip_address).int()
+                value=IPy.IP(self._instance.ip_address).int() - self._int_ip_const
             )
 
     def clear_metadata(self, *args, **kwargs):

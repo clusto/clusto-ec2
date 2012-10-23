@@ -80,13 +80,15 @@ class EC2VirtualServer(BasicVirtualServer):
             self.set_attr(
                 key='ip',
                 subkey='nic-eth0',
-                value=IPy.IP(self._instance.private_ip_address).int() - self._int_ip_const
+                value=IPy.IP(self._instance.private_ip_address).int() - \
+                    self._int_ip_const
             )
         if self._instance.ip_address:
             self.set_attr(
                 key='ip',
                 subkey='ext-eth0',
-                value=IPy.IP(self._instance.ip_address).int() - self._int_ip_const
+                value=IPy.IP(self._instance.ip_address).int() - \
+                    self._int_ip_const
             )
 
     def clear_metadata(self, *args, **kwargs):
@@ -121,16 +123,23 @@ class EC2VirtualServer(BasicVirtualServer):
 
         if udata:
             template = Template(udata)
-            return template.render(
-                clusto={
-                    'name': self.name,
-                    'region': self.attr_value(
-                        key='aws',
-                        subkey='ec2_region',
-                        merge_container_attrs=True
-                    ),
-                }
-            )
+            attr_dict = {}
+#           Add all aws information as values
+            for attr in self.attrs(key='aws', merge_container_attrs=True):
+                if not attr.subkey.starts_with('ec2_'):
+                    continue
+#               don't recurse
+                if attr.subkey == 'ec2_user_data':
+                    continue
+                k = '_'.join(attr.subkey.split('_')[1:])
+                if k == 'boot_script':
+                    if os.path.isfile(attr.value):
+                        f = open(attr.value)
+                        attr_dict[k] = f.read()
+                        f.close()
+                attr_dict[k] = attr.value
+            attr_dict.update({'name': self.name,})
+            return template.render(clusto=attr_dict)
         else:
             return None
 
@@ -201,6 +210,7 @@ class EC2VirtualServer(BasicVirtualServer):
         if not self.attr_value(key='aws', subkey='ec2_skip_ephemeral',
             merge_container_attrs=True):
             block_mapping = self._ephemeral_storage()
+
         reservation = image.run(instance_type=instance_type,
             placement=placement,
             key_name=key_name,

@@ -10,7 +10,7 @@ import sys
 
 setuptools.setup(
     name = "clusto-ec2",
-    version = "0.3",
+    version = "0.4",
     packages = setuptools.find_packages('src'),
     author = "Ron Gorodetzky",
     author_email = "ron@parktree.net",

@@ -25,10 +25,8 @@ class BootstrapEc2(script_helper.Script):
             help='Your Amazon web services key')
         parser.add_argument('--aws-secret-key', '-s', required=True,
             help='Your Amazon web services secret key')
-        parser.add_argument('--vm-manager', '-m', default='ec2vmman',
-            help='Name of the EC2 VM Manager you want to use/initialize')
-        parser.add_argument('--ip-manager', '-i', default='ec2ipman',
-            help='Name of the EC2 IP Manager you want to use/initialize')
+        parser.add_argument('--conn-manager', '-c', default='ec2connman',
+            help='Name of the EC2 Connection Manager you want to use')
         parser.add_argument('--add-to-pool', '-p', default=None,
             help='If given, amazon "location" objects will be inserted in '
                 'the given pool')
@@ -41,28 +39,28 @@ class BootstrapEc2(script_helper.Script):
 
     def run(self, args):
         self.debug('Grab or create the VM Manager')
-        ec2vmman = clusto.get_entities(clusto_types=[ec2_drivers.EC2VMManager])
-        if not ec2vmman:
+        ec2connman = clusto.get_entities(
+            clusto_types=[ec2_drivers.EC2ConnectionManager])
+        if not ec2connman:
             if not args.aws_key and not args.aws_secrets_key:
                 raise Exception("you must specify both an aws_access_key_id "
                     "and an aws_secret_access_key if you don't already have "
-                    "an EC2VMManager")
-            ec2vmman = ec2_drivers.EC2VMManager(args.vm_manager,
+                    "an EC2ConnectionManager")
+            ec2connman = ec2_drivers.EC2ConnectionManager(args.conn_manager,
                 aws_access_key_id=args.aws_key,
                 aws_secret_access_key=args.aws_secret_key)
-            self.info('Created the "%s" EC2 VMManager' % (args.vm_manager))
+            self.info('Created the "%s" EC2 Connection Manager' %
+                (args.conn_manager))
         else:
-            ec2vmman = ec2vmman.pop()
-
-        conn = ec2vmman._connection()
+            ec2connman = ec2connman.pop()
 
         container_pool = None
         if args.add_to_pool:
             container_pool = clusto.get_or_create(
                 args.add_to_pool, drivers.pool.Pool)
         self.info('Creating all available regions')
-        for region in conn.get_all_regions():
-            curconn = ec2vmman._connection(region.name)
+        for region in ec2connman._connection().get_all_regions():
+            curconn = ec2connman._connection(region.name)
             region_entity = clusto.get_or_create(region.name,
                 ec2_drivers.EC2Region,
                 region=region.name)
@@ -90,7 +88,7 @@ class BootstrapEc2(script_helper.Script):
 
         if not args.no_import:
             self.info('Creating all instances')
-            for reservations in conn.get_all_instances():
+            for reservations in ec2connman._connection().get_all_instances():
                 for instance in reservations.instances:
                     instance_entity = clusto.get_or_create(instance.id,
                             ec2_drivers.EC2VirtualServer)
@@ -102,8 +100,14 @@ class BootstrapEc2(script_helper.Script):
                     if instance.key_name is not None:
                         instance_entity.set_attr(key='aws', subkey='ec2_key_name',
                                 value=instance.key_name)
-                    if instance_entity not in ec2vmman.referencers():
-                        ec2vmman.allocate(instance_entity, instance)
+                    instance_entity.set_attr(key='aws',
+                        subkey='ec2_instance_id',
+                        value=instance.id
+                    )
+                    if instance_entity not in ec2connman.referencers():
+                        ec2connman.allocate(instance_entity)
+                        ec2connman.additional_attrs(instance_entity,
+                            resource={'instance': instance})
                         instance_entity.update_metadata()
                     self.debug('%s is imported' % (instance,))
         self.info('Finished, AWS objects should now be in the database')

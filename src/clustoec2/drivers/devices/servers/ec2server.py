@@ -1,7 +1,7 @@
 from boto.ec2 import blockdevicemapping
 from clusto.drivers.devices.servers import BasicVirtualServer
 from clusto.exceptions import ResourceException
-from clustoec2.drivers.resourcemanagers.ec2vmmanager import EC2VMManager
+from clustoec2.drivers.resourcemanagers import ec2connmanager
 import IPy
 from mako import template
 import os
@@ -26,11 +26,16 @@ class EC2VirtualServer(BasicVirtualServer):
         """
 
         if not self._i:
-            res = EC2VMManager.resources(self)[0]
-            vmman = EC2VMManager.get_resource_manager(res)
-
-            c = vmman._connection(res.value['region'])
-            instance_id = res.value['instance_id']
+            instance_data = self.attr_value(key='ec2connmanager',
+                subkey='instance')
+            if not instance_data:
+                return None
+            instance_id = instance_data.get('instance_id')
+            if not instance_id:
+                return None
+            res = ec2connmanager.EC2ConnectionManager.resources(self)[0]
+            mgr = ec2connmanager.EC2ConnectionManager.get_resource_manager(res)
+            c = mgr._connection(res.value['region'])
             rs = c.get_all_instances(instance_ids=[instance_id])
             self._i = rs[0].instances[0]
         return self._i
@@ -78,16 +83,16 @@ class EC2VirtualServer(BasicVirtualServer):
         self.clear_metadata()
         self._instance.update()
         if self._instance.private_ip_address:
-            self.set_attr(
+            self.add_attr(
                 key='ip',
-                subkey='nic-eth0',
+                subkey='nic-eth',
                 value=IPy.IP(self._instance.private_ip_address).int() - \
                     self._int_ip_const
             )
         if self._instance.ip_address:
-            self.set_attr(
+            self.add_attr(
                 key='ip',
-                subkey='ext-eth0',
+                subkey='ext-eth',
                 value=IPy.IP(self._instance.ip_address).int() - \
                     self._int_ip_const
             )
@@ -135,7 +140,7 @@ class EC2VirtualServer(BasicVirtualServer):
                 k = '_'.join(attr.subkey.split('_')[1:])
                 if k == 'boot_script':
                     if os.path.isfile(attr.value):
-                        f = open(attr.value)
+                        f = open(attr.value, 'rb')
                         attr_dict[k] = f.read()
                         f.close()
                 else:
@@ -160,7 +165,7 @@ class EC2VirtualServer(BasicVirtualServer):
             mapping['/dev/sd%s' % (chr(ord('b') + block),)] = eph
         return mapping
 
-    def create(self, vmman, captcha=False, wait=True):
+    def create(self, captcha=False, wait=True):
         """
         Creates an instance if it isn't already created
         """
@@ -168,11 +173,11 @@ class EC2VirtualServer(BasicVirtualServer):
         try:
             if self._instance:
                 raise ResourceException('This instance is already created')
-        except IndexError:
-#           Instance doesn't exist, create
-            pass
         except:
             raise
+
+        res = ec2connmanager.EC2ConnectionManager.resources(self)[0]
+        mgr = ec2connmanager.EC2ConnectionManager.get_resource_manager(res)
 
         image_id = self.attr_value(key='aws', subkey='ec2_ami',
             merge_container_attrs=True)
@@ -205,7 +210,7 @@ class EC2VirtualServer(BasicVirtualServer):
             merge_container_attrs=True
         )
 
-        image = vmman._connection(region).get_image(image_id)
+        image = mgr._connection(region).get_image(image_id)
 #       Unless you explicitly skip the creation of ephemeral drives, these
 #       will get created, you're already paying for them after all
         block_mapping = None
@@ -222,7 +227,7 @@ class EC2VirtualServer(BasicVirtualServer):
 
         self._i = reservation.instances[0]
         self._i.add_tag('Name', self.name)
-        result = vmman.allocate(self, resource=self._i)
+        result = mgr.additional_attrs(self, resource={'instance': self._i})
         if wait:
             self.poll_until('running')
 
@@ -260,8 +265,6 @@ class EC2VirtualServer(BasicVirtualServer):
         try:
             if self._instance:
                 pass
-        except IndexError:
-            raise ResourceException('This instance appears to be gone')
         except:
             raise
 
@@ -275,22 +278,18 @@ class EC2VirtualServer(BasicVirtualServer):
         warnings = []
         for vol in volumes:
             dev = vol.attach_data.device.split('/')[-1]
-#           if instance is terminated, delete everything
-            if self.state == 'terminated':
+#           It could be that some instances haven't freed their volumes
+            try:
                 vol.delete()
-            else:
-#               It could be that some instances haven't freed their volumes
-                try:
-                    vol.delete()
-                except Exception as e:
-                    warnings.append("Couldn't delete volume %(dev)s (%(id)s) "
-                        "from %(name)s, reason: %(reason)s" % {
-                            'dev': dev,
-                            'id': vol.id,
-                            'name': self.name,
-                            'reason': e.error_message
-                        }
-                    )
+            except Exception as e:
+                warnings.append("Couldn't delete volume %(dev)s (%(id)s) "
+                    "from %(name)s, reason: %(reason)s" % {
+                        'dev': dev,
+                        'id': vol.id,
+                        'name': self.name,
+                        'reason': e.error_message
+                    }
+                )
 
 #       finally, delete the entity from clustometa
         self.entity.delete()

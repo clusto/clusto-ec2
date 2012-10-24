@@ -4,14 +4,14 @@ from clusto.exceptions import ResourceException
 import time
 
 
-class EC2VMManagerException(ResourceException):
+class EC2ConnManagerException(ResourceException):
     pass
 
 
-class EC2VMManager(ResourceManager):
+class EC2ConnectionManager(ResourceManager):
 
-    _driver_name = 'ec2vmmanager'
-    _attr_name = 'ec2vmmanager'
+    _driver_name = 'ec2connmanager'
+    _attr_name = 'ec2connmanager'
 
     _conns = {}
     _properties = {
@@ -33,15 +33,6 @@ class EC2VMManager(ResourceManager):
             )
         return self._conns[r]
 
-    def _image_to_dict(self, image):
-        """
-        Returns a dictionary with AMI information
-        """
-        return {
-            'region': image.region.name,
-            'image_id': image.id,
-        }
-
     def _instance_to_dict(self, instance):
         """
         Returns a dictionary with Instance information
@@ -51,6 +42,15 @@ class EC2VMManager(ResourceManager):
             'instance_id': instance.id,
             'image_id': instance.image_id,
             'region': instance.region.name,
+        }
+
+    def _connection_to_dict(self, connection):
+        """
+        Returns a dictionary with Instance information
+        """
+        return {
+            'version': connection.APIVersion,
+            'region': connection.region.name,
         }
 
     def get_all_ec2_instance_resources(self, regions=[]):
@@ -75,24 +75,32 @@ class EC2VMManager(ResourceManager):
 
         return instance_resources
 
-    def allocate(self, thing, resource=(), number=True):
+    def additional_attrs(self, thing, resource, number=True):
         """
-        Makes sure allocate works with only EC2 Instance objects
+        Record the image allocation as additional resource attrs
         """
-        if resource == ():
-            return super(EC2VMManager, self).allocate(thing,
-                resource=resource, number=number)
-        else:
-            if not isinstance(resource, ec2.instance.Instance):
-                raise TypeError('You can only allocate EC2 image resources')
-            r = self._instance_to_dict(resource)
-            return super(EC2VMManager, self).allocate(thing,
-                resource=r, number=number)
+
+        for name, val in resource.items():
+            if isinstance(val, ec2.instance.Instance):
+                data = self._instance_to_dict(val)
+                self.set_resource_attr(thing,
+                    resource,
+                    number=number,
+                    key=name,
+                    value=data
+                )
+                return data
 
     def allocator(self, thing, resource=(), number=True):
         """
-        This should only be called if you expect a new instance to be
-        allocated without .create()
+        Allocate a new connection-type resource to the given thing
         """
-        raise EC2VMManagerException('EC2VMManager cannot allocate on its own,'
-            ' needs to be called via .create()')
+
+        for res in self.resources(thing):
+            raise ResourceException("%s is already assigned to %s"
+                % (thing.name, res.value))
+
+        region = thing.attr_value(key='aws', subkey='ec2_region',
+            merge_container_attrs=True) or 'us-east-1'
+
+        return (self._connection_to_dict(self._connection(region)), True)

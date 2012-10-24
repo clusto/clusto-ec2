@@ -3,7 +3,8 @@ from clusto.drivers.devices.servers import BasicVirtualServer
 from clusto.exceptions import ResourceException
 from clustoec2.drivers.resourcemanagers.ec2vmmanager import EC2VMManager
 import IPy
-from mako.template import Template
+from mako import template
+import os
 import time
 
 MAX_POLL_COUNT = 30
@@ -122,11 +123,11 @@ class EC2VirtualServer(BasicVirtualServer):
             merge_container_attrs=True)
 
         if udata:
-            template = Template(udata)
+            tpl = template.Template(udata)
             attr_dict = {}
 #           Add all aws information as values
             for attr in self.attrs(key='aws', merge_container_attrs=True):
-                if not attr.subkey.starts_with('ec2_'):
+                if not attr.subkey.startswith('ec2_'):
                     continue
 #               don't recurse
                 if attr.subkey == 'ec2_user_data':
@@ -137,9 +138,10 @@ class EC2VirtualServer(BasicVirtualServer):
                         f = open(attr.value)
                         attr_dict[k] = f.read()
                         f.close()
-                attr_dict[k] = attr.value
+                else:
+                    attr_dict[k] = attr.value
             attr_dict.update({'name': self.name,})
-            return template.render(clusto=attr_dict)
+            return tpl.render(**attr_dict)
         else:
             return None
 

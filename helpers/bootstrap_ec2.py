@@ -39,9 +39,10 @@ class BootstrapEc2(script_helper.Script):
 
     def run(self, args):
         self.debug('Grab or create the VM Manager')
-        ec2connman = clusto.get_entities(
-            clusto_types=[ec2_drivers.EC2ConnectionManager])
-        if not ec2connman:
+        try:
+            ec2connman = clusto.get_by_name(args.conn_manager,
+                assert_driver=ec2_drivers.EC2ConnectionManager)
+        except LookupError:
             if not args.aws_key and not args.aws_secrets_key:
                 raise Exception("you must specify both an aws_access_key_id "
                     "and an aws_secret_access_key if you don't already have "
@@ -51,8 +52,6 @@ class BootstrapEc2(script_helper.Script):
                 aws_secret_access_key=args.aws_secret_key)
             self.info('Created the "%s" EC2 Connection Manager' %
                 (args.conn_manager))
-        else:
-            ec2connman = ec2connman.pop()
 
         container_pool = None
         if args.add_to_pool:

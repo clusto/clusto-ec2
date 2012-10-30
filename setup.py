@@ -16,7 +16,7 @@ setuptools.setup(
     author_email = "ron@parktree.net",
     description = "Amazon EC2 extension for clusto",
     install_requires = [
-        #'clusto>=0.7',
+        'clusto>0.6',
         'boto>=2.0',
         'mako',
     ],

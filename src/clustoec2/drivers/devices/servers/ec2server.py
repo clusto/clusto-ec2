@@ -61,13 +61,13 @@ class EC2VirtualServer(BasicVirtualServer):
         it can return a list of IPy.IP objects.
         """
         ips = []
-        l = self.attr_values(key='ip', subkey='nic-eth0')
+        l = self.attr_values(key='ip', subkey='nic-eth')
         if l:
             if objects:
                 [ips.append(self._int_to_ipy(_)) for _ in l]
             else:
                 [ips.append(self._int_to_ipy(_).strNormal()) for _ in l]
-        l = self.attr_values(key='ip', subkey='ext-eth0')
+        l = self.attr_values(key='ip', subkey='ext-eth')
         if l:
             if objects:
                 [ips.append(self._int_to_ipy(_)) for _ in l]

@@ -1,99 +1,306 @@
-
-from clusto.drivers.devices.common import IPMixin
+from boto.ec2 import blockdevicemapping
 from clusto.drivers.devices.servers import BasicVirtualServer
-from clustoec2.drivers.resourcemanagers.ec2vmmanager import EC2VMManager
-
+from clusto.exceptions import ResourceException
+from clustoec2.drivers.resourcemanagers import ec2connmanager
+import IPy
+from mako import template
+import os
 import time
 
-class EC2VirtualServer(BasicVirtualServer, IPMixin):
+MAX_POLL_COUNT = 30
+
+
+class EC2VirtualServer(BasicVirtualServer):
+
     _driver_name = "ec2virtualserver"
+    _i = None
+    _int_ip_const = 2147483648
 
-    _port_meta = {}
-
+    def _int_to_ipy(self, num):
+        return IPy.IP(num + self._int_ip_const)
 
     @property
     def _instance(self):
-        res = EC2VMManager.resources(self)[0]
-        manager = EC2VMManager.get_resource_manager(res)
+        """
+        Returns a boto.ec2.Instance object to work with
+        """
 
-        instance = manager._get_instance_from_resource(res.value)
-        return instance
+        if not self._i:
+            instance_data = self.attr_value(key='ec2connmanager',
+                subkey='instance')
+            if not instance_data:
+                return None
+            instance_id = instance_data.get('instance_id')
+            if not instance_id:
+                return None
+            res = ec2connmanager.EC2ConnectionManager.resources(self)[0]
+            mgr = ec2connmanager.EC2ConnectionManager.get_resource_manager(res)
+            c = mgr._connection(res.value['region'])
+            rs = c.get_all_instances(instance_ids=[instance_id])
+            self._i = rs[0].instances[0]
+        return self._i
 
-    def get_state(self):
-        """Get the instance state."""
+    @property
+    def state(self):
+        """
+        Get the instance state
+        """
 
-        return self._instance.state
+        return self._instance.update()
 
     def console(self, *args, **kwargs):
-
+        """
+        Returns the console log output from the EC2 instance
+        """
         console = self._instance.get_console_output()
-
         return console.output
 
+    def get_ips(self, objects=False):
+        """
+        Returns a list of IP addresses to work with. Alternatively,
+        it can return a list of IPy.IP objects.
+        """
+        ips = []
+        l = self.attr_values(key='ip', subkey='nic-eth')
+        if l:
+            if objects:
+                [ips.append(self._int_to_ipy(_)) for _ in l]
+            else:
+                [ips.append(self._int_to_ipy(_).strNormal()) for _ in l]
+        l = self.attr_values(key='ip', subkey='ext-eth')
+        if l:
+            if objects:
+                [ips.append(self._int_to_ipy(_)) for _ in l]
+            else:
+                [ips.append(self._int_to_ipy(_).strNormal()) for _ in l]
+        return ips
 
     def update_metadata(self, *args, **kwargs):
+        """
+        Updates the IP attributes for this instance
+        """
 
-        while True:
-
-            state = self.get_state()
-
-
-            if state == 'running':
-                self.clear_metadata()
-                self.bind_ip_to_osport(self._instance.private_ip_address,
-                                       'nic-eth0')
-
-                self.bind_ip_to_osport(self._instance.ip_address, 'ext-eth0')
-                break
-
-            if not kwargs.get('wait', False):
-                break
-
-            time.sleep(2)
+        self.clear_metadata()
+        self._instance.update()
+        if self._instance.private_ip_address:
+            self.add_attr(
+                key='ip',
+                subkey='nic-eth',
+                value=IPy.IP(self._instance.private_ip_address).int() - \
+                    self._int_ip_const
+            )
+        if self._instance.ip_address:
+            self.add_attr(
+                key='ip',
+                subkey='ext-eth',
+                value=IPy.IP(self._instance.ip_address).int() - \
+                    self._int_ip_const
+            )
 
     def clear_metadata(self, *args, **kwargs):
-        self.del_attrs('ip')
+        """
+        Deletes the metadata that can change
+        """
+        self.del_attrs(key='ip')
 
-    def shutdown(self, captcha=True):
+    def power_off(self, captcha=True):
         if captcha and not self._power_captcha('shutdown'):
             return False
         self._instance.stop()
 
-    def start(self, captcha=False):
+    def power_on(self, captcha=False):
         if captcha and not self._power_captcha('start'):
             return False
         self._instance.start()
 
-    def reboot(self, captcha=True):
+    def power_reboot(self, captcha=True):
         if captcha and not self._power_captcha('reboot'):
             return False
         self._instance.reboot()
 
+    def _build_user_data(self, udata=None):
+        """
+        Builds and returns a userdata string based on the
+        user data string attribute
+        """
+
+        udata = self.attr_value(key='aws', subkey='ec2_user_data',
+            merge_container_attrs=True)
+
+        if udata:
+            tpl = template.Template(udata)
+            attr_dict = {}
+#           Add all aws information as values
+            for attr in self.attrs(key='aws', merge_container_attrs=True):
+                if not attr.subkey.startswith('ec2_'):
+                    continue
+#               don't recurse
+                if attr.subkey == 'ec2_user_data':
+                    continue
+                k = '_'.join(attr.subkey.split('_')[1:])
+                if k == 'boot_script':
+                    if os.path.isfile(attr.value):
+                        f = open(attr.value, 'rb')
+                        attr_dict[k] = f.read()
+                        f.close()
+                else:
+                    attr_dict[k] = attr.value
+            attr_dict.update({'name': self.name,})
+            return tpl.render(**attr_dict)
+        else:
+            return None
+
+    def _ephemeral_storage(self):
+        """
+        Return the appropriate block mapping so you
+        get your ephemeral storage drives
+        """
+
+#       Apparently amazon only gives you 4 ephemeral drives
+        number = 4
+        mapping = blockdevicemapping.BlockDeviceMapping()
+        for block in range(0, number):
+            eph = blockdevicemapping.BlockDeviceType()
+            eph.ephemeral_name = 'ephemeral%d' % (block, )
+            mapping['/dev/sd%s' % (chr(ord('b') + block),)] = eph
+        return mapping
+
+    def create(self, captcha=False, wait=True):
+        """
+        Creates an instance if it isn't already created
+        """
+
+        try:
+            if self._instance:
+                raise ResourceException('This instance is already created')
+        except:
+            raise
+
+        res = ec2connmanager.EC2ConnectionManager.resources(self)[0]
+        mgr = ec2connmanager.EC2ConnectionManager.get_resource_manager(res)
+
+        image_id = self.attr_value(key='aws', subkey='ec2_ami',
+            merge_container_attrs=True)
+
+        if not image_id:
+            raise ResourceException('No image specified for %s' %
+                (self.name,))
+
+        region = self.attr_value(key='aws', subkey='ec2_region',
+            merge_container_attrs=True) or 'us-east-1'
+
+        instance_type = self.attr_value(key='aws', subkey='ec2_instance_type',
+            merge_container_attrs=True)
+
+        if not instance_type:
+            raise ResourceException('No instance type specified for %s' %
+                (self.name,))
+
+        placement = self.attr_value(key='aws', subkey='ec2_placement',
+                                     merge_container_attrs=True)
+
+        user_data = self._build_user_data()
+
+        key_name = self.attr_value(key='aws', subkey='ec2_key_name',
+            merge_container_attrs=True)
+
+        security_groups = self.attr_values(
+            key='aws',
+            subkey='ec2_security_group',
+            merge_container_attrs=True
+        )
+
+        image = mgr._connection(region).get_image(image_id)
+#       Unless you explicitly skip the creation of ephemeral drives, these
+#       will get created, you're already paying for them after all
+        block_mapping = None
+        if not self.attr_value(key='aws', subkey='ec2_skip_ephemeral',
+            merge_container_attrs=True):
+            block_mapping = self._ephemeral_storage()
+
+        reservation = image.run(instance_type=instance_type,
+            placement=placement,
+            key_name=key_name,
+            user_data=user_data,
+            security_groups=security_groups,
+            block_device_map=block_mapping)
+
+        self._i = reservation.instances[0]
+        self._i.add_tag('Name', self.name)
+        result = mgr.additional_attrs(self, resource={'instance': self._i})
+        if wait:
+            self.poll_until('running')
+
+        return (result, True)
+
+    def poll_until(self, state, interval=2, max_poll=MAX_POLL_COUNT):
+        """
+        Polls for the requested status, with a possible timeout.
+        Shamelessly stolen from py-smartdc
+        """
+
+        c = 0
+        while self.state != state and c < max_poll:
+            c += 1
+            time.sleep(interval)
+
+    def poll_while(self, state, interval=2, max_poll=MAX_POLL_COUNT):
+        """
+        Polls whil the status doesn't change, with a possible timeout.
+        Shamelessly stolen from py-smartdc
+        """
+
+        c = 0
+        while self.state == state and c < max_poll:
+            c += 1
+            time.sleep(interval)
+
     def destroy(self, captcha=True, wait=True):
+        """
+        Destroys this instance if it exists
+        """
         if captcha and not self._power_captcha('destroy'):
             return False
+
+        try:
+            if self._instance:
+                pass
+        except:
+            raise
+
         instance_id = self._instance.id
         volumes = self._instance.connection.get_all_volumes(
             filters={'attachment.instance-id': instance_id})
         self._instance.terminate()
-        while wait:
-            state = self._instance.update()
-            if state != 'terminated':
-                print ('Instance still in the "%s" state, waiting '
-                    '5 more seconds...' % (state,))
-                time.sleep(5)
-            else:
-                break
+        if wait:
+            self.poll_until('terminated')
 #       destroy all volumes
+        warnings = []
         for vol in volumes:
             dev = vol.attach_data.device.split('/')[-1]
-#           root device (sda1) will disappear along with the instance
-            if dev != 'sda1':
+#           It could be that some instances haven't freed their volumes
+            try:
                 vol.delete()
+            except Exception as e:
+                warnings.append("Couldn't delete volume %(dev)s (%(id)s) "
+                    "from %(name)s, reason: %(reason)s" % {
+                        'dev': dev,
+                        'id': vol.id,
+                        'name': self.name,
+                        'reason': e.error_message
+                    }
+                )
 
-        return True
+#       finally, delete the entity from clustometa
+        self.entity.delete()
+        return warnings
 
     def reconcile_ebs_volumes(self):
+        """
+        Will reflect the changes from amazon in clusto first,
+        whatever's left from clusto to amazon
+        """
+
         volumes = {}
         conn = self._instance.connection
 #       Seems important to grab the placement from the instance data in the
@@ -120,7 +327,8 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
             if 'vol-id' not in data.keys():
 #               create the volumes w/ default size of 10G
                 vol = conn.create_volume(int(data['size']), zone)
-                self.add_attr(key='aws', subkey='ebs_%s' % (dev,), value=vol.id)
+                self.add_attr(key='aws',
+                    subkey='ebs_%s' % (dev,), value=vol.id)
             else:
                 try:
                     vol = conn.get_all_volumes(volume_ids=[data['vol-id']])
@@ -157,8 +365,8 @@ class EC2VirtualServer(BasicVirtualServer, IPMixin):
             if not self.attrs(key='aws', subkey='ebs_%s' % (dev,)):
                 self.add_attr(key='aws', subkey='ebs_%s' % (dev,),
                     value=int(vol.size))
-                self.add_attr(key='aws', subkey='ebs_%s' % (dev,), value=vol.id)
+                self.add_attr(key='aws', subkey='ebs_%s' % (dev,),
+                    value=vol.id)
             tag = '%s:%s' % (self.name, device)
             if 'Name' not in vol.tags or vol.tags['Name'] != tag:
                 vol.add_tag('Name', tag)
-

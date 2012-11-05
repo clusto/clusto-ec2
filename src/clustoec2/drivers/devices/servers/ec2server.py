@@ -2,6 +2,7 @@ from boto.ec2 import blockdevicemapping
 from clusto.drivers.devices.servers import BasicVirtualServer
 from clusto.exceptions import ResourceException
 from clustoec2.drivers.resourcemanagers import ec2connmanager
+from datetime import datetime
 import IPy
 from mako import template
 import os
@@ -55,24 +56,40 @@ class EC2VirtualServer(BasicVirtualServer):
         console = self._instance.get_console_output()
         return console.output
 
-    def get_ips(self, objects=False):
+    @property
+    def private_ips(self):
+        """
+        Only return private IP addresses
+        """
+        return self.get_ips(objects=True, private=True, public=False)
+
+    @property
+    def public_ips(self):
+        """
+        Only return public IP addresses
+        """
+        return self.get_ips(objects=True, private=False, public=True)
+
+    def get_ips(self, objects=False, private=True, public=True):
         """
         Returns a list of IP addresses to work with. Alternatively,
         it can return a list of IPy.IP objects.
         """
         ips = []
-        l = self.attr_values(key='ip', subkey='nic-eth')
-        if l:
-            if objects:
-                [ips.append(self._int_to_ipy(_)) for _ in l]
-            else:
-                [ips.append(self._int_to_ipy(_).strNormal()) for _ in l]
-        l = self.attr_values(key='ip', subkey='ext-eth')
-        if l:
-            if objects:
-                [ips.append(self._int_to_ipy(_)) for _ in l]
-            else:
-                [ips.append(self._int_to_ipy(_).strNormal()) for _ in l]
+        if private:
+            l = self.attr_values(key='ip', subkey='nic-eth')
+            if l:
+                if objects:
+                    [ips.append(self._int_to_ipy(_)) for _ in l]
+                else:
+                    [ips.append(self._int_to_ipy(_).strNormal()) for _ in l]
+        if public:
+            l = self.attr_values(key='ip', subkey='ext-eth')
+            if l:
+                if objects:
+                    [ips.append(self._int_to_ipy(_)) for _ in l]
+                else:
+                    [ips.append(self._int_to_ipy(_).strNormal()) for _ in l]
         return ips
 
     def update_metadata(self, *args, **kwargs):
@@ -165,6 +182,31 @@ class EC2VirtualServer(BasicVirtualServer):
             mapping['/dev/sd%s' % (chr(ord('b') + block),)] = eph
         return mapping
 
+    def _get_or_create_security_groups(self, conn):
+        """
+        If security groups don't exist, they will get created. Results will
+        be returned to calling argument. It receives the current connection
+        used as a parameter
+        """
+
+        sgs = self.attr_values(
+            key='aws',
+            subkey='ec2_security_group',
+            merge_container_attrs=True
+        )
+        sec_groups = []
+        for sg in sgs:
+            found = conn.get_all_security_groups(filters={'group-name': sg})
+            if found:
+                found[0] in sec_groups or sec_groups.append(found[0])
+            else:
+                desc = 'Created on %s' % (datetime.now(),)
+                group = conn.create_security_group(name=sg, description=desc)
+                sec_groups.append(group.name)
+
+        return sec_groups
+
+
     def create(self, captcha=False, wait=True):
         """
         Creates an instance if it isn't already created
@@ -204,12 +246,6 @@ class EC2VirtualServer(BasicVirtualServer):
         key_name = self.attr_value(key='aws', subkey='ec2_key_name',
             merge_container_attrs=True)
 
-        security_groups = self.attr_values(
-            key='aws',
-            subkey='ec2_security_group',
-            merge_container_attrs=True
-        )
-
         image = mgr._connection(region).get_image(image_id)
 #       Unless you explicitly skip the creation of ephemeral drives, these
 #       will get created, you're already paying for them after all
@@ -217,6 +253,9 @@ class EC2VirtualServer(BasicVirtualServer):
         if not self.attr_value(key='aws', subkey='ec2_skip_ephemeral',
             merge_container_attrs=True):
             block_mapping = self._ephemeral_storage()
+
+        security_groups = self._get_or_create_security_groups(
+                                mgr._connection(region))
 
         reservation = image.run(instance_type=instance_type,
             placement=placement,

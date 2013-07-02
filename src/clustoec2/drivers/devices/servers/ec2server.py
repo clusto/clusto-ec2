@@ -182,21 +182,24 @@ class EC2VirtualServer(BasicVirtualServer):
             mapping['/dev/sd%s' % (chr(ord('b') + block),)] = eph
         return mapping
 
-    def _get_or_create_security_groups(self, conn):
+    def _get_or_create_security_groups(self, conn, ids=False):
         """
         If security groups don't exist, they will get created. Results will
         be returned to calling argument. It receives the current connection
         used as a parameter
         """
 
+        subkey = 'ec2_security_group_id' if ids else 'ec2_security_group'
+        filter_key = 'group-id' if ids else 'group-name'
+
         sgs = self.attr_values(
             key='aws',
-            subkey='ec2_security_group',
+            subkey=subkey,
             merge_container_attrs=True
         )
         sec_groups = []
         for sg in sgs:
-            found = conn.get_all_security_groups(filters={'group-name': sg})
+            found = conn.get_all_security_groups(filters={filter_key: sg})
             if found:
                 found[0] in sec_groups or sec_groups.append(found[0])
             else:
@@ -221,48 +224,58 @@ class EC2VirtualServer(BasicVirtualServer):
         res = ec2connmanager.EC2ConnectionManager.resources(self)[0]
         mgr = ec2connmanager.EC2ConnectionManager.get_resource_manager(res)
 
-        image_id = self.attr_value(key='aws', subkey='ec2_ami',
-            merge_container_attrs=True)
+        # We build these on a different step
+        skip_attrs = ['ec2_security_group', 'ec2_security_group_id', 'ec2_user_data']
 
+        ec2_attrs = dict([(_.subkey, _.value) for _ in self.attrs(key='aws', \
+                    merge_container_attrs=True) if _.subkey and \
+                    _.subkey.startswith('ec2_') and _.subkey \
+                    not in skip_attrs])
+
+        image_id = ec2_attrs.pop('ec2_ami', None)
         if not image_id:
             raise ResourceException('No image specified for %s' %
                 (self.name,))
 
-        region = self.attr_value(key='aws', subkey='ec2_region',
-            merge_container_attrs=True) or 'us-east-1'
+        region = ec2_attrs.pop('ec2_region', 'us-east-1')
 
-        instance_type = self.attr_value(key='aws', subkey='ec2_instance_type',
-            merge_container_attrs=True)
-
+        instance_type = ec2_attrs.pop('ec2_instance_type', None)
         if not instance_type:
             raise ResourceException('No instance type specified for %s' %
                 (self.name,))
 
-        placement = self.attr_value(key='aws', subkey='ec2_placement',
-                                     merge_container_attrs=True)
-
+        placement = ec2_attrs.pop('ec2_placement', None)
         user_data = self._build_user_data()
-
-        key_name = self.attr_value(key='aws', subkey='ec2_key_name',
-            merge_container_attrs=True)
+        key_name = ec2_attrs.pop('ec2_key_name', None)
 
         image = mgr._connection(region).get_image(image_id)
 #       Unless you explicitly skip the creation of ephemeral drives, these
 #       will get created, you're already paying for them after all
         block_mapping = None
-        if not self.attr_value(key='aws', subkey='ec2_skip_ephemeral',
-            merge_container_attrs=True):
+        skip_ephemeral = ec2_attrs.pop('ec2_skip_ephemeral', False)
+        if not skip_ephemeral:
             block_mapping = self._ephemeral_storage()
 
-        security_groups = self._get_or_create_security_groups(
-                                mgr._connection(region))
+        is_vpc = self.attr_value(key='aws', subkey='is_vpc', merge_container_attrs=True)
+
+        extra_args = dict(('_'.join(_.split('_')[1:]), __) \
+                     for _,__ in ec2_attrs.items())
+
+        if is_vpc:
+            security_group_ids = self._get_or_create_security_groups(
+                                    mgr._connection(region), ids=True)
+            extra_args['security_group_ids'] = security_group_ids
+        else:
+            security_groups = self._get_or_create_security_groups(
+                                    mgr._connection(region))
+            extra_args['security_groups'] = security_groups
 
         reservation = image.run(instance_type=instance_type,
             placement=placement,
             key_name=key_name,
             user_data=user_data,
-            security_groups=security_groups,
-            block_device_map=block_mapping)
+            block_device_map=block_mapping,
+            **extra_args)
 
         self._i = reservation.instances[0]
         self._i.add_tag('Name', self.name)

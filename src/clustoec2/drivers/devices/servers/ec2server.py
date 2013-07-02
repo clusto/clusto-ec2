@@ -273,23 +273,18 @@ class EC2VirtualServer(BasicVirtualServer):
         if is_vpc:
             security_group_ids = self._get_or_create_security_groups(
                                     mgr._connection(region), ids=True)
-            reservation = image.run(instance_type=instance_type,
-                placement=placement,
-                key_name=key_name,
-                user_data=user_data,
-                security_group_ids=security_group_ids,
-                block_device_map=block_mapping,
-                **extra_args)
+            extra_args['security_group_ids'] = security_group_ids
         else:
             security_groups = self._get_or_create_security_groups(
                                     mgr._connection(region))
-            reservation = image.run(instance_type=instance_type,
-                placement=placement,
-                key_name=key_name,
-                user_data=user_data,
-                security_groups=security_groups,
-                block_device_map=block_mapping,
-                **extra_args)
+            extra_args['security_groups'] = security_groups
+
+        reservation = image.run(instance_type=instance_type,
+            placement=placement,
+            key_name=key_name,
+            user_data=user_data,
+            block_device_map=block_mapping,
+            **extra_args)
 
         self._i = reservation.instances[0]
         self._i.add_tag('Name', self.name)

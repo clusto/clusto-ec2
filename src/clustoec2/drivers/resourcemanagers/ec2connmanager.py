@@ -1,7 +1,6 @@
 from boto import ec2
 from clusto.drivers.base import ResourceManager
 from clusto.exceptions import ResourceException
-import time
 
 
 class EC2ConnManagerException(ResourceException):

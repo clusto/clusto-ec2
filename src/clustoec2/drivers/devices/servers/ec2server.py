@@ -224,9 +224,10 @@ class EC2VirtualServer(BasicVirtualServer):
         res = ec2connmanager.EC2ConnectionManager.resources(self)[0]
         mgr = ec2connmanager.EC2ConnectionManager.get_resource_manager(res)
 
-        # We build these on a different step
+#       We build these on a different step
         skip_attrs = ['ec2_security_group', 'ec2_security_group_id', 'ec2_user_data']
 
+#       Grab all the `ec2_*` attributes available
         ec2_attrs = dict([(_.subkey, _.value) for _ in self.attrs(key='aws', \
                     merge_container_attrs=True) if _.subkey and \
                     _.subkey.startswith('ec2_') and _.subkey \
@@ -256,6 +257,7 @@ class EC2VirtualServer(BasicVirtualServer):
         if not skip_ephemeral:
             block_mapping = self._ephemeral_storage()
 
+#       Now we need to check if this is vpc or not
         is_vpc = self.attr_value(key='aws', subkey='is_vpc', merge_container_attrs=True)
 
         extra_args = dict(('_'.join(_.split('_')[1:]), __) \

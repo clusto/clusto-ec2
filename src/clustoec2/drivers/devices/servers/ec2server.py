@@ -227,35 +227,26 @@ class EC2VirtualServer(BasicVirtualServer):
         # We build these on a different step
         skip_attrs = ['ec2_security_group', 'ec2_security_group_id', 'ec2_user_data']
 
-        ec2_attrs = dict([(_.subkey, _) for _ in self.attrs(key='aws', \
+        ec2_attrs = dict([(_.subkey, _.value) for _ in self.attrs(key='aws', \
                     merge_container_attrs=True) if _.subkey and \
                     _.subkey.startswith('ec2_') and _.subkey \
                     not in skip_attrs])
 
         image_id = ec2_attrs.pop('ec2_ami', None)
-        if image_id:
-            image_id = image_id.value
-        else:
+        if not image_id:
             raise ResourceException('No image specified for %s' %
                 (self.name,))
 
-        region = ec2_attrs.pop('ec2_region', None)
-        region = region.value if region else 'us-east-1'
+        region = ec2_attrs.pop('ec2_region', 'us-east-1')
 
         instance_type = ec2_attrs.pop('ec2_instance_type', None)
-        if instance_type:
-            instance_type = instance_type.value
-        else:
+        if not instance_type:
             raise ResourceException('No instance type specified for %s' %
                 (self.name,))
 
         placement = ec2_attrs.pop('ec2_placement', None)
-        placement = placement.value if placement else None
-
         user_data = self._build_user_data()
-
         key_name = ec2_attrs.pop('ec2_key_name', None)
-        key_name = key_name.value if key_name else None
 
         image = mgr._connection(region).get_image(image_id)
 #       Unless you explicitly skip the creation of ephemeral drives, these
@@ -267,7 +258,7 @@ class EC2VirtualServer(BasicVirtualServer):
 
         is_vpc = self.attr_value(key='aws', subkey='is_vpc', merge_container_attrs=True)
 
-        extra_args = dict(('_'.join(_.split('_')[1:]), __.value) \
+        extra_args = dict(('_'.join(_.split('_')[1:]), __) \
                      for _,__ in ec2_attrs.items())
 
         if is_vpc:

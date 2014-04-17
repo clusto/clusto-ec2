@@ -7,17 +7,17 @@
 from clusto.drivers.locations.datacenters.basicdatacenter import BasicDatacenter
 
 
-class EC2Region(BasicDatacenter):
+class VPC(BasicDatacenter):
     """
-    EC2 region driver
+    Virtual Private Cloud driver
     """
 
-    _driver_name = "ec2region"
+    _driver_name = "vpc"
 
     def __init__(self, name_driver_entity, **kwargs):
-        super(EC2Region, self).__init__(name_driver_entity, **kwargs)
+        super(VPC, self).__init__(name_driver_entity, **kwargs)
 
         self.set_attr(
-            key='aws', subkey='ec2_region',
-            value=kwargs.get('region', name_driver_entity)
+            key='aws', subkey='ec2_vpc_id',
+            value=kwargs.get('vpc', name_driver_entity)
         )

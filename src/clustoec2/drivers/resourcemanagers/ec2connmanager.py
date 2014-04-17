@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+#
+# -*- mode:python; sh-basic-offset:4; indent-tabs-mode:nil; coding:utf-8 -*-
+# vim:set tabstop=4 softtabstop=4 expandtab shiftwidth=4 fileencoding=utf-8:
+#
+
 from boto import ec2
 from clusto.drivers.base import ResourceManager
 from clusto.exceptions import ResourceException
@@ -52,7 +58,7 @@ class EC2ConnectionManager(ResourceManager):
             'region': connection.region.name,
         }
 
-    def get_all_ec2_instance_resources(self, regions=[]):
+    def get_all_instance_resources(self, regions=[]):
         """
         Query AWS and return all active ec2 instances and their state. If
         a list of region names is provided, only return the instances
@@ -82,7 +88,8 @@ class EC2ConnectionManager(ResourceManager):
         for name, val in resource.items():
             if isinstance(val, ec2.instance.Instance):
                 data = self._instance_to_dict(val)
-                self.set_resource_attr(thing,
+                self.set_resource_attr(
+                    thing,
                     resource,
                     number=number,
                     key=name,
@@ -96,10 +103,13 @@ class EC2ConnectionManager(ResourceManager):
         """
 
         for res in self.resources(thing):
-            raise ResourceException("%s is already assigned to %s"
-                % (thing.name, res.value))
+            raise ResourceException('%s is already assigned to %s' % (
+                thing.name, res.value
+            ))
 
-        region = thing.attr_value(key='aws', subkey='ec2_region',
-            merge_container_attrs=True) or 'us-east-1'
+        region = thing.attr_value(
+            key='aws', subkey='ec2_region',
+            merge_container_attrs=True
+        ) or 'us-east-1'
 
         return (self._connection_to_dict(self._connection(region)), True)

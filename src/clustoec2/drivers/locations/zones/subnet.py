@@ -7,18 +7,18 @@
 from clusto.drivers.locations.zones import BasicZone
 
 
-class EC2Zone(BasicZone):
+class VPCSubnet(BasicZone):
     """
-    EC2 zone driver.
+    VPC subnet driver.
     """
 
-    _driver_name = "ec2zone"
+    _driver_name = "vpcsubnet"
 
     def __init__(self, name_driver_entity, **kwargs):
-        super(EC2Zone, self).__init__(name_driver_entity, **kwargs)
+        super(VPCSubnet, self).__init__(name_driver_entity, **kwargs)
 
         self.set_attr(
-            key='aws', subkey='ec2_placement', value=kwargs.get(
-                'placement', name_driver_entity
+            key='aws', subkey='ec2_subnet_id', value=kwargs.get(
+                'subnet', name_driver_entity
             )
         )

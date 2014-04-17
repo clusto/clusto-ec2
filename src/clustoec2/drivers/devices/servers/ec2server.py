@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+#
+# -*- mode:python; sh-basic-offset:4; indent-tabs-mode:nil; coding:utf-8 -*-
+# vim:set tabstop=4 softtabstop=4 expandtab shiftwidth=4 fileencoding=utf-8:
+#
+
 from boto.ec2 import blockdevicemapping
 from clusto.drivers.devices.servers import BasicVirtualServer
 from clusto.exceptions import ResourceException
@@ -13,36 +19,38 @@ MAX_POLL_COUNT = 30
 
 class EC2VirtualServer(BasicVirtualServer):
 
-    _driver_name = "ec2virtualserver"
+    _driver_name = 'ec2virtualserver'
     _i = None
     _int_ip_const = 2147483648
+    _manager = 'ec2connmanager'
+    _mgr_driver = ec2connmanager.EC2ConnectionManager
 
     def _int_to_ipy(self, num):
         return IPy.IP(num + self._int_ip_const)
 
-    @property
-    def _instance(self):
+    def _get_instance(self):
         """
         Returns a boto.ec2.Instance object to work with
         """
 
         if not self._i:
-            instance_data = self.attr_value(key='ec2connmanager',
-                subkey='instance')
+            instance_data = self.attr_value(
+                key=self._manager,
+                subkey='instance'
+            )
             if not instance_data:
                 return None
             instance_id = instance_data.get('instance_id')
             if not instance_id:
                 return None
-            res = ec2connmanager.EC2ConnectionManager.resources(self)[0]
-            mgr = ec2connmanager.EC2ConnectionManager.get_resource_manager(res)
+            res = self._mgr_driver.resources(self)[0]
+            mgr = self._mgr_driver.get_resource_manager(res)
             c = mgr._connection(res.value['region'])
             rs = c.get_all_instances(instance_ids=[instance_id])
             self._i = rs[0].instances[0]
         return self._i
 
-    @property
-    def state(self):
+    def get_state(self):
         """
         Get the instance state
         """
@@ -56,15 +64,13 @@ class EC2VirtualServer(BasicVirtualServer):
         console = self._instance.get_console_output()
         return console.output
 
-    @property
-    def private_ips(self):
+    def get_private_ips(self):
         """
         Only return private IP addresses
         """
         return self.get_ips(objects=True, private=True, public=False)
 
-    @property
-    def public_ips(self):
+    def get_public_ips(self):
         """
         Only return public IP addresses
         """
@@ -103,15 +109,17 @@ class EC2VirtualServer(BasicVirtualServer):
             self.add_attr(
                 key='ip',
                 subkey='nic-eth',
-                value=IPy.IP(self._instance.private_ip_address).int() - \
-                    self._int_ip_const
+                value=IPy.IP(
+                    self._instance.private_ip_address
+                ).int() - self._int_ip_const
             )
         if self._instance.ip_address:
             self.add_attr(
                 key='ip',
                 subkey='ext-eth',
-                value=IPy.IP(self._instance.ip_address).int() - \
-                    self._int_ip_const
+                value=IPy.IP(
+                    self._instance.ip_address
+                ).int() - self._int_ip_const
             )
 
     def clear_metadata(self, *args, **kwargs):
@@ -141,8 +149,10 @@ class EC2VirtualServer(BasicVirtualServer):
         user data string attribute
         """
 
-        udata = self.attr_value(key='aws', subkey='ec2_user_data',
-            merge_container_attrs=True)
+        udata = self.attr_value(
+            key='aws', subkey='ec2_user_data',
+            merge_container_attrs=True
+        )
 
         if udata:
             tpl = template.Template(udata)
@@ -162,7 +172,7 @@ class EC2VirtualServer(BasicVirtualServer):
                         f.close()
                 else:
                     attr_dict[k] = attr.value
-            attr_dict.update({'name': self.name,})
+            attr_dict.update({'name': self.name, })
             return tpl.render(**attr_dict)
         else:
             return None
@@ -209,7 +219,6 @@ class EC2VirtualServer(BasicVirtualServer):
 
         return sec_groups
 
-
     def create(self, captcha=False, wait=True):
         """
         Creates an instance if it isn't already created
@@ -221,29 +230,44 @@ class EC2VirtualServer(BasicVirtualServer):
         except:
             raise
 
-        res = ec2connmanager.EC2ConnectionManager.resources(self)[0]
-        mgr = ec2connmanager.EC2ConnectionManager.get_resource_manager(res)
+        res = self._mgr_driver.resources(self)[0]
+        mgr = self._mgr_driver.get_resource_manager(res)
 
 #       We build these on a different step
-        skip_attrs = ['ec2_security_group', 'ec2_security_group_id', 'ec2_user_data']
+        skip_attrs = [
+            'ec2_security_group',
+            'ec2_security_group_id',
+            'ec2_user_data'
+        ]
 
 #       Grab all the `ec2_*` attributes available
-        ec2_attrs = dict([(_.subkey, _.value) for _ in self.attrs(key='aws', \
-                    merge_container_attrs=True) if _.subkey and \
-                    _.subkey.startswith('ec2_') and _.subkey \
-                    not in skip_attrs])
+        ec2_attrs = dict(
+            [
+                (_.subkey, _.value) for _ in self.attrs(
+                    key='aws', merge_container_attrs=True
+                ) if _.subkey
+                and _.subkey.startswith('ec2_')
+                and _.subkey not in skip_attrs
+            ]
+        )
 
         image_id = ec2_attrs.pop('ec2_ami', None)
         if not image_id:
-            raise ResourceException('No image specified for %s' %
-                (self.name,))
+            raise ResourceException(
+                'No image specified for %s' % (
+                    self.name,
+                )
+            )
 
         region = ec2_attrs.pop('ec2_region', 'us-east-1')
 
         instance_type = ec2_attrs.pop('ec2_instance_type', None)
         if not instance_type:
-            raise ResourceException('No instance type specified for %s' %
-                (self.name,))
+            raise ResourceException(
+                'No instance type specified for %s' % (
+                    self.name,
+                )
+            )
 
         placement = ec2_attrs.pop('ec2_placement', None)
         user_data = self._build_user_data()
@@ -258,26 +282,33 @@ class EC2VirtualServer(BasicVirtualServer):
             block_mapping = self._ephemeral_storage()
 
 #       Now we need to check if this is vpc or not
-        is_vpc = self.attr_value(key='aws', subkey='is_vpc', merge_container_attrs=True)
+        is_vpc = self.attr_value(
+            key='aws', subkey='is_vpc', merge_container_attrs=True
+        )
 
-        extra_args = dict(('_'.join(_.split('_')[1:]), __) \
-                     for _,__ in ec2_attrs.items())
+        extra_args = dict(
+            ('_'.join(_.split('_')[1:]), __) for _, __ in ec2_attrs.items()
+        )
 
         if is_vpc:
             security_group_ids = self._get_or_create_security_groups(
-                                    mgr._connection(region), ids=True)
+                mgr._connection(region), ids=True
+            )
             extra_args['security_group_ids'] = security_group_ids
         else:
             security_groups = self._get_or_create_security_groups(
-                                    mgr._connection(region))
+                mgr._connection(region)
+            )
             extra_args['security_groups'] = security_groups
 
-        reservation = image.run(instance_type=instance_type,
+        reservation = image.run(
+            instance_type=instance_type,
             placement=placement,
             key_name=key_name,
             user_data=user_data,
             block_device_map=block_mapping,
-            **extra_args)
+            **extra_args
+        )
 
         self._i = reservation.instances[0]
         self._i.add_tag('Name', self.name)
@@ -336,8 +367,9 @@ class EC2VirtualServer(BasicVirtualServer):
             try:
                 vol.delete()
             except Exception as e:
-                warnings.append("Couldn't delete volume %(dev)s (%(id)s) "
-                    "from %(name)s, reason: %(reason)s" % {
+                warnings.append(
+                    'Could not delete volume %(dev)s (%(id)s) '
+                    'from %(name)s, reason: %(reason)s' % {
                         'dev': dev,
                         'id': vol.id,
                         'name': self.name,
@@ -381,8 +413,10 @@ class EC2VirtualServer(BasicVirtualServer):
             if 'vol-id' not in data.keys():
 #               create the volumes w/ default size of 10G
                 vol = conn.create_volume(int(data['size']), zone)
-                self.add_attr(key='aws',
-                    subkey='ebs_%s' % (dev,), value=vol.id)
+                self.add_attr(
+                    key='aws',
+                    subkey='ebs_%s' % (dev,), value=vol.id
+                )
             else:
                 try:
                     vol = conn.get_all_volumes(volume_ids=[data['vol-id']])
@@ -417,10 +451,19 @@ class EC2VirtualServer(BasicVirtualServer):
             dev = device.split('/')[-1]
 #           update attrs that are not in our db
             if not self.attrs(key='aws', subkey='ebs_%s' % (dev,)):
-                self.add_attr(key='aws', subkey='ebs_%s' % (dev,),
-                    value=int(vol.size))
-                self.add_attr(key='aws', subkey='ebs_%s' % (dev,),
-                    value=vol.id)
+                self.add_attr(
+                    key='aws', subkey='ebs_%s' % (dev,),
+                    value=int(vol.size)
+                )
+                self.add_attr(
+                    key='aws', subkey='ebs_%s' % (dev,),
+                    value=vol.id
+                )
             tag = '%s:%s' % (self.name, device)
             if 'Name' not in vol.tags or vol.tags['Name'] != tag:
                 vol.add_tag('Name', tag)
+
+    _instance = property(lambda self: self._get_instance())
+    state = property(lambda self: self.get_state())
+    private_ips = property(lambda self: self.get_private_ips())
+    public_ips = property(lambda self: self.get_public_ips())

@@ -4,6 +4,7 @@
 # vim:set tabstop=4 softtabstop=4 expandtab shiftwidth=4 fileencoding=utf-8:
 #
 
+import os
 import sys
 
 import clusto
@@ -22,12 +23,14 @@ class BootstrapEc2(script_helper.Script):
 
     def _add_arguments(self, parser):
         parser.add_argument(
-            '--aws-key', '-k', required=True,
-            help='Your Amazon web services key'
+            '-k', '--aws-key', required=not os.environ.get('AWS_ACCESS_KEY_ID', False),
+            help='Your AWS key id, defaults to ENV[AWS_ACCESS_KEY_ID] if set',
+            default=os.environ.get('AWS_ACCESS_KEY_ID')
         )
         parser.add_argument(
-            '--aws-secret-key', '-s', required=True,
-            help='Your Amazon web services secret key'
+            '-s', '--aws-secret-key', required=not os.environ.get('AWS_SECRET_ACCESS_KEY', False),
+            help='Your AWS key secret, defaults to ENV[AWS_SECRET_ACCESS_KEY] if set',
+            default=os.environ.get('AWS_SECRET_ACCESS_KEY')
         )
         parser.add_argument(
             '--vpc-manager', '-V', default='vpcconnman',
@@ -191,16 +194,17 @@ class BootstrapEc2(script_helper.Script):
                 for instance in reservations.instances:
                     idriver = ec2_drivers.devices.servers.EC2VirtualServer
                     connman = ec2connman
+                    name = instance.tags.get('Name', instance.id).lower().replace(' ', '_')
                     if instance.vpc_id and instance.subnet_id:
                         idriver = ec2_drivers.devices.servers.VPCVirtualServer
                         connman = vpcman
-                    self.debug('Creating %s instance (%s)' % (instance.id, idriver, ))
+                    self.debug('Creating %s instance (%s)' % (name, idriver, ))
                     instance_entity = clusto.get_or_create(
-                        instance.id,
+                        name,
                         idriver,
                     )
                     placement = clusto.get_by_name(instance.subnet_id or instance.placement)
-                    self.debug('Inserting instance %s into %s' % (instance.id, placement, ))
+                    self.debug('Inserting instance %s into %s' % (name, placement, ))
                     if instance_entity not in placement:
                         placement.insert(instance_entity)
                     instance_entity.set_attr(
@@ -215,9 +219,9 @@ class BootstrapEc2(script_helper.Script):
                     instance_entity.set_attr(
                         key='aws',
                         subkey='ec2_instance_id',
-                        value=instance.id
+                        value=name,
                     )
-                    self.debug('Allocating instance %s from %s' % (instance.id, connman, ))
+                    self.debug('Allocating instance %s from %s' % (name, connman, ))
                     if instance_entity not in connman.referencers():
                         connman.allocate(instance_entity)
                         connman.additional_attrs(

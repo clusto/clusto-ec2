@@ -7,7 +7,7 @@
 from boto.ec2 import blockdevicemapping
 from clusto.drivers.devices.servers import BasicVirtualServer
 from clusto.exceptions import ResourceException
-from clustoec2.drivers.resourcemanagers import ec2connmanager
+from clustoec2.drivers.base import EC2Mixin
 from datetime import datetime
 import IPy
 from mako import template
@@ -17,13 +17,11 @@ import time
 MAX_POLL_COUNT = 30
 
 
-class EC2VirtualServer(BasicVirtualServer):
+class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
 
     _driver_name = 'ec2virtualserver'
     _i = None
     _int_ip_const = 2147483648
-    _manager = 'ec2connmanager'
-    _mgr_driver = ec2connmanager.EC2ConnectionManager
 
     def _int_to_ipy(self, num):
         return IPy.IP(num + self._int_ip_const)
@@ -33,35 +31,14 @@ class EC2VirtualServer(BasicVirtualServer):
         Returns a boto.ec2.Instance object to work with
         """
 
-        if not self._i:
-            instance_data = self.attr_value(
-                key=self._manager,
-                subkey='instance'
-            )
-            if not instance_data:
-                return None
-            instance_id = instance_data.get('instance_id')
-            if not instance_id:
-                return None
-            res = self._mgr_driver.resources(self)[0]
-            mgr = self._mgr_driver.get_resource_manager(res)
-            c = mgr._connection(res.value['region'])
-            rs = c.get_all_instances(instance_ids=[instance_id])
-            self._i = rs[0].instances[0]
-        return self._i
-
-    def get_state(self):
-        """
-        Get the instance state
-        """
-
-        return self._instance.update()
+        reservation = self._get_object('instance')
+        return reservation.instances[0]
 
     def console(self, *args, **kwargs):
         """
         Returns the console log output from the EC2 instance
         """
-        console = self._instance.get_console_output()
+        console = self._get_instance().get_console_output()
         return console.output
 
     def get_private_ips(self):
@@ -104,21 +81,21 @@ class EC2VirtualServer(BasicVirtualServer):
         """
 
         self.clear_metadata()
-        self._instance.update()
-        if self._instance.private_ip_address:
+        self._get_instance().update()
+        if self._get_instance().private_ip_address:
             self.add_attr(
                 key='ip',
                 subkey='nic-eth',
                 value=IPy.IP(
-                    self._instance.private_ip_address
+                    self._get_instance().private_ip_address
                 ).int() - self._int_ip_const
             )
-        if self._instance.ip_address:
+        if self._get_instance().ip_address:
             self.add_attr(
                 key='ip',
                 subkey='ext-eth',
                 value=IPy.IP(
-                    self._instance.ip_address
+                    self._get_instance().ip_address
                 ).int() - self._int_ip_const
             )
 
@@ -131,17 +108,17 @@ class EC2VirtualServer(BasicVirtualServer):
     def power_off(self, captcha=True):
         if captcha and not self._power_captcha('shutdown'):
             return False
-        self._instance.stop()
+        self._get_instance().stop()
 
     def power_on(self, captcha=False):
         if captcha and not self._power_captcha('start'):
             return False
-        self._instance.start()
+        self._get_instance().start()
 
     def power_reboot(self, captcha=True):
         if captcha and not self._power_captcha('reboot'):
             return False
-        self._instance.reboot()
+        self._get_instance().reboot()
 
     def _build_user_data(self, udata=None):
         """
@@ -353,10 +330,10 @@ class EC2VirtualServer(BasicVirtualServer):
         except:
             raise
 
-        instance_id = self._instance.id
-        volumes = self._instance.connection.get_all_volumes(
+        instance_id = self._get_instance().id
+        volumes = self._get_instance().connection.get_all_volumes(
             filters={'attachment.instance-id': instance_id})
-        self._instance.terminate()
+        self._get_instance().terminate()
         if wait:
             self.poll_until('terminated')
 #       destroy all volumes
@@ -388,11 +365,11 @@ class EC2VirtualServer(BasicVirtualServer):
         """
 
         volumes = {}
-        conn = self._instance.connection
+        conn = self._get_instance().connection
 #       Seems important to grab the placement from the instance data in the
 #       unlikely scenario the clusto data doesn't match?
-        zone = self._instance.placement
-        instance_id = self._instance.id
+        zone = self._get_instance().placement
+        instance_id = self._get_instance().id
         for attr in self.attrs(key='aws', merge_container_attrs=True):
             if not attr.subkey.startswith('ebs_'):
                 continue
@@ -463,7 +440,10 @@ class EC2VirtualServer(BasicVirtualServer):
             if 'Name' not in vol.tags or vol.tags['Name'] != tag:
                 vol.add_tag('Name', tag)
 
+    def _get_instance_state(self):
+        return self._get_instance().update()
+
     _instance = property(lambda self: self._get_instance())
-    state = property(lambda self: self.get_state())
+    state = property(lambda self: self._get_instance_state())
     private_ips = property(lambda self: self.get_private_ips())
     public_ips = property(lambda self: self.get_public_ips())

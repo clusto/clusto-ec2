@@ -7,6 +7,7 @@
 from clustoec2.drivers.resourcemanagers import ec2connmanager
 from clustoec2.drivers.resourcemanagers import vpcconnmanager
 
+
 class EC2Mixin(object):
 
     _calls = {

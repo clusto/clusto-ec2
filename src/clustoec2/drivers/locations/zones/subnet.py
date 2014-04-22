@@ -5,9 +5,10 @@
 #
 
 from clusto.drivers.locations.zones import BasicZone
+from clustoec2.drivers.base import VPCMixin
 
 
-class VPCSubnet(BasicZone):
+class VPCSubnet(BasicZone, VPCMixin):
     """
     VPC subnet driver.
     """
@@ -22,3 +23,17 @@ class VPCSubnet(BasicZone):
                 'subnet', name_driver_entity
             )
         )
+
+    def _get_subnet(self):
+        """
+        Returns a boto.vpc.subnet.Subnet object to work with
+        """
+
+        return self._get_object('subnet')
+
+    def get_cidr_block(self):
+        return self._get_subnet().cidr_block
+
+    _subnet = property(lambda self: self._get_subnet())
+    state = property(lambda self: self._get_state('subnet'))
+    cidr_block = property(lambda self: self.get_cidr_block())

@@ -5,9 +5,10 @@
 #
 
 from clusto.drivers.locations.datacenters.basicdatacenter import BasicDatacenter
+from clustoec2.drivers.base import VPCMixin
 
 
-class VPC(BasicDatacenter):
+class VPC(BasicDatacenter, VPCMixin):
     """
     Virtual Private Cloud driver
     """
@@ -21,3 +22,17 @@ class VPC(BasicDatacenter):
             key='aws', subkey='ec2_vpc_id',
             value=kwargs.get('vpc', name_driver_entity)
         )
+
+    def _get_vpc(self):
+        """
+        Returns a boto.vpc.vpc.VPC object to work with
+        """
+
+        return self._get_object('vpc')
+
+    def get_cidr_block(self):
+        return self._get_vpc().cidr_block
+
+    _vpc = property(lambda self: self._get_vpc())
+    state = property(lambda self: self._get_state('vpc'))
+    cidr_block = property(lambda self: self.get_cidr_block())

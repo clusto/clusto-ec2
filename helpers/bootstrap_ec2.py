@@ -124,6 +124,12 @@ class BootstrapEc2(script_helper.Script):
                     ec2_drivers.locations.datacenters.VPC,
                     vpc=v.id,
                 )
+                if v_entity not in vpcman.referencers():
+                    vpcman.allocate(v_entity)
+                    vpcman.additional_attrs(
+                        v_entity,
+                        resource={'vpc': v}
+                    )
                 self.debug('Created "%s" VPC' % (v.id, ))
                 if v_entity not in region_entity:
                     region_entity.insert(v_entity)
@@ -139,6 +145,12 @@ class BootstrapEc2(script_helper.Script):
                         ec2_drivers.locations.zones.VPCSubnet,
                         subnet=sn.id,
                     )
+                    if sn_entity not in vpcman.referencers():
+                        vpcman.allocate(sn_entity)
+                        vpcman.additional_attrs(
+                            sn_entity,
+                            resource={'subnet': sn}
+                        )
                     if sn_entity not in v_entity:
                         v_entity.insert(sn_entity)
                         self.debug('Inserted subnet %s in VPC %s' % (

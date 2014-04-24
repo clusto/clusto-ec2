@@ -231,7 +231,7 @@ class BootstrapEc2(script_helper.Script):
                     instance_entity.set_attr(
                         key='aws',
                         subkey='ec2_instance_id',
-                        value=name,
+                        value=instance.id,
                     )
                     self.debug('Allocating instance %s from %s' % (name, connman, ))
                     if instance_entity not in connman.referencers():

@@ -200,6 +200,32 @@ class BootstrapEc2(script_helper.Script):
                 )
                 container_pool.insert(region_entity)
 
+        self.info('Creating all security groups')
+        sgs = vpcman._connection().get_all_security_groups()
+        belong = {}
+        for sg in sgs:
+            belong[sg.id] = [_.id for _ in sg.instances()]
+        sgs = [(_.id, _.name, _.region.name, _.vpc_id) for _ in sgs]
+        for sg_id, sg_name, region_name, vpc_id in sgs:
+            self.debug(
+                'Importing %s (%s), region: %s, vpc? %s' % (
+                    sg_name, sg_id, region_name, bool(vpc_id),
+                )
+            )
+            sg_ent = clusto.get_or_create(
+                sg_id,
+                ec2_drivers.categories.securitygroup.EC2SecurityGroup,
+                group_id=sg_id,
+                group_name=sg_name
+            )
+            if vpc_id:
+                parent = clusto.get_by_name(vpc_id)
+            else:
+                parent = clusto.get_by_name(region_name)
+            if sg_ent not in parent:
+                self.debug('Inserting security group %s into %s' % (sg_id, vpc_id or region_name,))
+                parent.insert(sg_ent)
+
         if not args.no_import:
             self.info('Creating all instances')
             for reservations in vpcman._connection().get_all_instances():
@@ -233,6 +259,18 @@ class BootstrapEc2(script_helper.Script):
                         subkey='ec2_instance_id',
                         value=instance.id,
                     )
+
+                    for sg, instances in belong.items():
+                        if instance.id in instances:
+                            sg_ent = clusto.get_by_name(sg)
+                            if instance_entity not in sg_ent:
+                                self.debug(
+                                    'Adding instance %s to security group %s' % (
+                                        instance.id, sg,
+                                    )
+                                )
+                                sg_ent.insert(instance_entity)
+
                     self.debug('Allocating instance %s from %s' % (name, connman, ))
                     if instance_entity not in connman.referencers():
                         connman.allocate(instance_entity)

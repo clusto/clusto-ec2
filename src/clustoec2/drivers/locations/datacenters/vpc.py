@@ -19,7 +19,7 @@ class VPC(BasicDatacenter, VPCMixin):
         super(VPC, self).__init__(name_driver_entity, **kwargs)
 
         self.set_attr(
-            key='aws', subkey='ec2_vpc_id',
+            key='aws', subkey='vpc_id',
             value=kwargs.get('vpc', name_driver_entity)
         )
 

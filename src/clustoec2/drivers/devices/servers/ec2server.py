@@ -32,7 +32,8 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         """
 
         reservation = self._get_object('instance')
-        return reservation.instances[0]
+        if reservation:
+            return reservation.instances[0]
 
     def console(self, *args, **kwargs):
         """
@@ -109,11 +110,13 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         if captcha and not self._power_captcha('shutdown'):
             return False
         self._get_instance().stop()
+        return True
 
     def power_on(self, captcha=False):
         if captcha and not self._power_captcha('start'):
             return False
         self._get_instance().start()
+        return True
 
     def power_reboot(self, captcha=True):
         if captcha and not self._power_captcha('reboot'):
@@ -134,11 +137,11 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         if udata:
             tpl = template.Template(udata)
             attr_dict = {}
-#           Add all aws information as values
+            # Add all aws information as values
             for attr in self.attrs(key='aws', merge_container_attrs=True):
                 if not attr.subkey.startswith('ec2_'):
                     continue
-#               don't recurse
+                # don't recurse
                 if attr.subkey == 'ec2_user_data':
                     continue
                 k = '_'.join(attr.subkey.split('_')[1:])
@@ -160,7 +163,7 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         get your ephemeral storage drives
         """
 
-#       Apparently amazon only gives you 4 ephemeral drives
+        # Apparently amazon only gives you 4 ephemeral drives
         number = 4
         mapping = blockdevicemapping.BlockDeviceMapping()
         for block in range(0, number):
@@ -169,32 +172,60 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
             mapping['/dev/sd%s' % (chr(ord('b') + block),)] = eph
         return mapping
 
-    def _get_or_create_security_groups(self, conn, ids=False):
+    def _get_or_create_security_groups(self, conn, vpc_id=None):
         """
         If security groups don't exist, they will get created. Results will
         be returned to calling argument. It receives the current connection
         used as a parameter
         """
 
-        subkey = 'ec2_security_group_id' if ids else 'ec2_security_group'
-        filter_key = 'group-id' if ids else 'group-name'
-
-        sgs = self.attr_values(
+        # We gotta search for both, because if they don't exist you'll have to create them
+        sgs_ids = self.attr_values(
             key='aws',
-            subkey=subkey,
+            subkey='ec2_security_group_id',
             merge_container_attrs=True
         )
-        sec_groups = []
-        for sg in sgs:
-            found = conn.get_all_security_groups(filters={filter_key: sg})
-            if found:
-                found[0] in sec_groups or sec_groups.append(found[0])
-            else:
+        sgs_names = self.attr_values(
+            key='aws',
+            subkey='ec2_security_group',
+            merge_container_attrs=True
+        )
+        filters = {}
+        # If you received a vpc_id then only return those from that vpc
+        # Also if you received a vpc_id, you must return ids
+        ids = False
+        if vpc_id:
+            filters['vpc-id'] = vpc_id
+            ids = True
+        existing_groups = dict([(_.id, _.name) for _ in conn.get_all_security_groups(filters=filters)])
+        final_groups = set()
+
+        # If you have a security group id that doesn't exist in aws (???) bail out
+        diff = set(sgs_ids) - set(existing_groups.keys())
+        if diff:
+            raise ValueError(
+                'The security group ids %s are not present in the security groups '
+                'found in amazon, where did you find them?' % (','.join(diff),)
+            )
+
+        # I need the two items otherwise I'd do this with sets
+        for sg in sgs_ids:
+            [final_groups.add((k, v)) for k, v in existing_groups.iteritems() if k == sg]
+
+        # Next search based on the group name. It is possible group names don't exist
+        # in aws (new group) so you have to create those.
+        for sg in sgs_names:
+            if sg not in existing_groups.values():
                 desc = 'Created on %s' % (datetime.now(),)
                 group = conn.create_security_group(name=sg, description=desc)
-                sec_groups.append(group.name)
+                final_groups.add((group.id, group.name))
+            [final_groups.add((k, v)) for k, v in existing_groups.iteritems() if v == sg]
 
-        return sec_groups
+        final_groups = dict(final_groups)
+        if ids:
+            return final_groups.keys()
+        else:
+            return final_groups.values()
 
     def create(self, captcha=False, wait=True):
         """
@@ -202,22 +233,23 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         """
 
         try:
-            if self._instance:
-                raise ResourceException('This instance is already created')
+            assert self._instance
+        except AssertionError:
+            pass
         except:
-            raise
+            raise('Cannot create this instance')
 
         res = self._mgr_driver.resources(self)[0]
         mgr = self._mgr_driver.get_resource_manager(res)
 
-#       We build these on a different step
+        # We build these on a different step
         skip_attrs = [
             'ec2_security_group',
             'ec2_security_group_id',
             'ec2_user_data'
         ]
 
-#       Grab all the `ec2_*` attributes available
+        # Grab all the `ec2_*` attributes available
         ec2_attrs = dict(
             [
                 (_.subkey, _.value) for _ in self.attrs(
@@ -251,25 +283,25 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         key_name = ec2_attrs.pop('ec2_key_name', None)
 
         image = mgr._connection(region).get_image(image_id)
-#       Unless you explicitly skip the creation of ephemeral drives, these
-#       will get created, you're already paying for them after all
+        # Unless you explicitly skip the creation of ephemeral drives, these
+        # will get created, you're already paying for them after all
         block_mapping = None
         skip_ephemeral = ec2_attrs.pop('ec2_skip_ephemeral', False)
         if not skip_ephemeral:
             block_mapping = self._ephemeral_storage()
 
-#       Now we need to check if this is vpc or not
-        is_vpc = self.attr_value(
-            key='aws', subkey='is_vpc', merge_container_attrs=True
+        # Now we need to check if this is vpc or not
+        vpc_id = self.attr_value(
+            key='aws', subkey='vpc_id', merge_container_attrs=True, default=None
         )
 
         extra_args = dict(
             ('_'.join(_.split('_')[1:]), __) for _, __ in ec2_attrs.items()
         )
 
-        if is_vpc:
+        if vpc_id:
             security_group_ids = self._get_or_create_security_groups(
-                mgr._connection(region), ids=True
+                mgr._connection(region), vpc_id=vpc_id
             )
             extra_args['security_group_ids'] = security_group_ids
         else:
@@ -325,10 +357,11 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
             return False
 
         try:
-            if self._instance:
-                pass
+            assert self._instance
+        except AssertionError:
+            raise ResourceException('This instance does not exist')
         except:
-            raise
+            pass
 
         instance_id = self._get_instance().id
         volumes = self._get_instance().connection.get_all_volumes(
@@ -336,11 +369,11 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         self._get_instance().terminate()
         if wait:
             self.poll_until('terminated')
-#       destroy all volumes
+        # destroy all volumes
         warnings = []
         for vol in volumes:
             dev = vol.attach_data.device.split('/')[-1]
-#           It could be that some instances haven't freed their volumes
+            # It could be that some instances haven't freed their volumes
             try:
                 vol.delete()
             except Exception as e:
@@ -354,7 +387,7 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
                     }
                 )
 
-#       finally, delete the entity from clustometa
+        # finally, delete the entity from clustometa
         self.entity.delete()
         return warnings
 
@@ -366,8 +399,8 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
 
         volumes = {}
         conn = self._get_instance().connection
-#       Seems important to grab the placement from the instance data in the
-#       unlikely scenario the clusto data doesn't match?
+        # Seems important to grab the placement from the instance data in the
+        # unlikely scenario the clusto data doesn't match?
         zone = self._get_instance().placement
         instance_id = self._get_instance().id
         for attr in self.attrs(key='aws', merge_container_attrs=True):
@@ -388,7 +421,7 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
             device = '/dev/%s' % (dev, )
             vol = None
             if 'vol-id' not in data.keys():
-#               create the volumes w/ default size of 10G
+                # create the volumes w/ default size of 10G
                 vol = conn.create_volume(int(data['size']), zone)
                 self.add_attr(
                     key='aws',
@@ -399,15 +432,15 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
                     vol = conn.get_all_volumes(volume_ids=[data['vol-id']])
                     vol = vol[0]
                 except:
-#                   This volume does not exist anymore
+                    # This volume does not exist anymore
                     self.del_attrs(key='aws', subkey='ebs_%s' % (dev,))
             if vol:
-#               Attach the volume if it's not attached
+                # Attach the volume if it's not attached
                 if not vol.attachment_state():
                     vol.attach(instance_id, device)
                 else:
-#                   Ok so it's attached, but what if it's attached to something
-#                   else? if that is the case we should clear the attrs
+                    # Ok so it's attached, but what if it's attached to something
+                    # else? if that is the case we should clear the attrs
                     try:
                         is_mine = conn.get_all_volumes(
                             volume_ids=[data['vol-id']],
@@ -419,14 +452,14 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
                     else:
                         self.del_attrs(key='aws', subkey='ebs_%s' % (dev,))
 
-#       Ok so now from aws to clusto
+        # Ok so now from aws to clusto
         volumes = conn.get_all_volumes(
             filters={'attachment.instance-id': instance_id})
 
         for vol in volumes:
             device = vol.attach_data.device
             dev = device.split('/')[-1]
-#           update attrs that are not in our db
+            # update attrs that are not in our db
             if not self.attrs(key='aws', subkey='ebs_%s' % (dev,)):
                 self.add_attr(
                     key='aws', subkey='ebs_%s' % (dev,),

@@ -16,7 +16,7 @@ class EC2ConnManagerException(ResourceException):
 class EC2ConnectionManager(ResourceManager):
 
     _driver_name = 'ec2connmanager'
-    _attr_name = 'ec2connmanager'
+    _attr_name = 'awsconnection'
 
     _conns = {}
     _properties = {
@@ -48,6 +48,20 @@ class EC2ConnectionManager(ResourceManager):
             'image_id': instance.image_id,
             'region': instance.region.name,
         }
+
+    def _security_group_to_dict(self, securitygroup):
+        """
+        Returns a dictionary with security group information
+        """
+
+        data = {
+            'id': securitygroup.id,
+            'region': securitygroup.region.name,
+            'owner_id': securitygroup.owner_id,
+        }
+        if securitygroup.vpc_id:
+            data['vpc_id'] = securitygroup.vpc_id
+        return data
 
     def _connection_to_dict(self, connection):
         """
@@ -86,8 +100,14 @@ class EC2ConnectionManager(ResourceManager):
         """
 
         for name, val in resource.items():
+            data = None
             if isinstance(val, ec2.instance.Instance):
                 data = self._instance_to_dict(val)
+            elif isinstance(val, ec2.securitygroup.SecurityGroup):
+                data = self._security_group_to_dict(val)
+            else:
+                pass
+            if data:
                 self.set_resource_attr(
                     thing,
                     resource,

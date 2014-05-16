@@ -19,9 +19,7 @@ class VPCConnManagerException(ResourceException):
 class VPCConnectionManager(ec2connmanager.EC2ConnectionManager):
 
     _driver_name = 'vpcconnmanager'
-    _attr_name = 'vpcconnmanager'
     _conns = {}
-    _manager = 'vpcconnmanager'
 
     def _connection(self, region=None):
         """

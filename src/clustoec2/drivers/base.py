@@ -16,13 +16,12 @@ class EC2Mixin(object):
         'subnet': 'get_all_subnets',
     }
     _o = None
-    _manager = 'ec2connmanager'
     _mgr_driver = ec2connmanager.EC2ConnectionManager
 
     def _get_object(self, name, **kwargs):
         if not self._o:
             data = self.attr_value(
-                key=self._manager,
+                key='awsconnection',
                 subkey=name,
             )
             if not data:
@@ -43,5 +42,4 @@ class EC2Mixin(object):
 
 
 class VPCMixin(EC2Mixin):
-    _manager = 'vpcconnmanager'
     _mgr_driver = vpcconnmanager.VPCConnectionManager

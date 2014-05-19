@@ -321,7 +321,7 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         block_mapping = None
         skip_ephemeral = ec2_attrs.pop('ec2_skip_ephemeral', False)
         if not skip_ephemeral:
-            block_mapping = self._ephemeral_storage()
+            block_mapping = self._ephemeral_storage(instance_type)
 
         # Now we need to check if this is vpc or not
         vpc_id = self.attr_value(

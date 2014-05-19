@@ -136,22 +136,22 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
 
         if udata:
             tpl = template.Template(udata)
-            attr_dict = {}
+            # Always send the name of this object
+            attr_dict = {
+                'name': self.name,
+            }
             # Add all aws information as values
             for attr in self.attrs(key='aws', merge_container_attrs=True):
-                if not attr.subkey.startswith('ec2_'):
-                    continue
                 # don't recurse
                 if attr.subkey == 'ec2_user_data':
                     continue
-                k = '_'.join(attr.subkey.split('_')[1:])
-                if k == 'boot_script':
+                if attr.subkey == 'ec2_boot_script_file':
                     if os.path.isfile(attr.value):
                         f = open(attr.value, 'rb')
-                        attr_dict[k] = f.read()
+                        attr_dict[attr.subkey] = f.read()
                         f.close()
                 else:
-                    attr_dict[k] = attr.value
+                    attr_dict[attr.subkey] = attr.value
             attr_dict.update({'name': self.name, })
             return tpl.render(**attr_dict)
         else:
@@ -163,8 +163,8 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         get your ephemeral storage drives
         """
 
-        # Apparently amazon only gives you 4 ephemeral drives
-        number = 4
+        # Apparently amazon only gives you up to 8 ephemeral drives
+        number = 8
         mapping = blockdevicemapping.BlockDeviceMapping()
         for block in range(0, number):
             eph = blockdevicemapping.BlockDeviceType()

@@ -22,6 +22,40 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
     _driver_name = 'ec2virtualserver'
     _i = None
     _int_ip_const = 2147483648
+    _eph_drives = {
+        'c1.medium': 1,
+        'c1.xlarge': 4,
+        'c3.large': 2,
+        'c3.xlarge': 2,
+        'c3.4xlarge': 2,
+        'c3.8xlarge': 2,
+        'cc2.8xlarge': 4,
+        'cg1.4xlarge': 2,
+        'cr1.8xlarge': 2,
+        'hi1.4xlarge': 2,
+        'hs1.8xlarge': 24,
+        'i2.xlarge': 1,
+        'i2.2xlarge': 2,
+        'i2.4xlarge': 4,
+        'i2.8xlarge': 8,
+        'm1.small': 1,
+        'm1.medium': 1,
+        'm1.large': 2,
+        'm1.xlarge': 4,
+        'm2.xlarge': 1,
+        'm2.2xlarge': 1,
+        'm2.4xlarge': 2,
+        'm3.medium': 1,
+        'm3.large': 1,
+        'm3.xlarge': 2,
+        'm3.2xlarge': 2,
+        'r3.large': 1,
+        'r3.xlarge': 1,
+        'r3.2xlarge': 1,
+        'r3.4xlarge': 1,
+        'r3.8xlarge': 2,
+        't1.micro': 0,
+    }
 
     def _int_to_ipy(self, num):
         return IPy.IP(num + self._int_ip_const)
@@ -157,14 +191,13 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         else:
             return None
 
-    def _ephemeral_storage(self):
+    def _ephemeral_storage(self, instance_type):
         """
         Return the appropriate block mapping so you
         get your ephemeral storage drives
         """
 
-        # Apparently amazon only gives you up to 8 ephemeral drives
-        number = 8
+        number = self._eph_drives.get(instance_type, 0)
         mapping = blockdevicemapping.BlockDeviceMapping()
         for block in range(0, number):
             eph = blockdevicemapping.BlockDeviceType()

@@ -21,6 +21,9 @@ setuptools.setup(
     ],
     entry_points={
         'console_scripts': [
+            'clusto-ec2 = clustoec2.commands.ec2:main',
+            'clusto-vpc = clustoec2.commands.vpc:main',
+            'clusto-ec2-bootstrap = clustoec2.commands.bootstrap:main',
         ],
     },
     zip_safe=False,

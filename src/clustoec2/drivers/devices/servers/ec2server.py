@@ -22,6 +22,7 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
     _driver_name = 'ec2virtualserver'
     _i = None
     _int_ip_const = 2147483648
+    # non-listed instances will get 0 ephemeral drives at spin-up time
     _eph_drives = {
         'c1.medium': 1,
         'c1.xlarge': 4,
@@ -32,6 +33,12 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         'cc2.8xlarge': 4,
         'cg1.4xlarge': 2,
         'cr1.8xlarge': 2,
+        'd2.xlarge': 3,
+        'd2.2xlarge': 6,
+        'd2.4xlarge': 12,
+        'd2.8xlarge': 24,
+        'g2.2xlarge': 1,
+        'g2.8xlarge': 2,
         'hi1.4xlarge': 2,
         'hs1.8xlarge': 24,
         'i2.xlarge': 1,
@@ -54,7 +61,6 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
         'r3.2xlarge': 1,
         'r3.4xlarge': 1,
         'r3.8xlarge': 2,
-        't1.micro': 0,
     }
 
     def _int_to_ipy(self, num):

@@ -129,7 +129,8 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
                 subkey='nic-eth',
                 value=IPy.IP(
                     self._get_instance().private_ip_address
-                ).int() - self._int_ip_const
+                ).int() - self._int_ip_const,
+                number=0
             )
         if self._get_instance().ip_address:
             self.add_attr(
@@ -137,7 +138,8 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
                 subkey='ext-eth',
                 value=IPy.IP(
                     self._get_instance().ip_address
-                ).int() - self._int_ip_const
+                ).int() - self._int_ip_const,
+                number=1
             )
 
     def clear_metadata(self, *args, **kwargs):

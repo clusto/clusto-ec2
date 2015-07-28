@@ -123,21 +123,33 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
 
         self.clear_metadata()
         self._get_instance().update()
-        if self._get_instance().private_ip_address:
+        ip = self._get_instance().private_ip_address
+        if ip:
             self.add_attr(
                 key='ip',
                 subkey='nic-eth',
-                value=IPy.IP(
-                    self._get_instance().private_ip_address
-                ).int() - self._int_ip_const
+                value=IPy.IP(ip).int() - self._int_ip_const,
+                number=0
             )
-        if self._get_instance().ip_address:
+            self.add_attr(
+                key='ip',
+                subkey='ipstring',
+                value=ip,
+                number=0
+            )
+        ip = self._get_instance().ip_address
+        if ip:
             self.add_attr(
                 key='ip',
                 subkey='ext-eth',
-                value=IPy.IP(
-                    self._get_instance().ip_address
-                ).int() - self._int_ip_const
+                value=IPy.IP(ip).int() - self._int_ip_const,
+                number=1
+            )
+            self.add_attr(
+                key='ip',
+                subkey='ipstring',
+                value=ip,
+                number=1
             )
 
     def clear_metadata(self, *args, **kwargs):

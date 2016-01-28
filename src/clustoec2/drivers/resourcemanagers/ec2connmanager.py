@@ -133,3 +133,20 @@ class EC2ConnectionManager(ResourceManager):
         ) or 'us-east-1'
 
         return (self._connection_to_dict(self._connection(region)), True)
+
+    def reconcile_additional_attrs(self):
+        """
+        Will correct the number of any incorrectly set attributes from
+        additional attributes that share the resourcemanager's attr_key.
+        """
+        for ref in self.references():
+            thing = clusto.get_entities([ref.entity.name])[0]
+            for attr in thing.attrs(self._attr_name):
+                if not attr.number == ref.number:
+                    thing.set_attr(
+                        key=attr.key,
+                        subkey=attr.subkey,
+                        # Replicate all values except the number.
+                        number=ref.number,
+                        value=attr.value
+                    )

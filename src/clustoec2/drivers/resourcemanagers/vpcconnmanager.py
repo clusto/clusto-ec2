@@ -85,11 +85,10 @@ class VPCConnectionManager(ec2connmanager.EC2ConnectionManager):
 
             logging.debug(data)
             if data:
-                self.set_resource_attr(
-                    thing,
-                    resource,
+                thing.add_attr(
+                    key=self._attr_name,
+                    subkey=name,
                     number=number,
-                    key=name,
                     value=data
                 )
                 return data

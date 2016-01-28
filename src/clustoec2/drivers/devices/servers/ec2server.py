@@ -354,7 +354,7 @@ class EC2VirtualServer(BasicVirtualServer, EC2Mixin):
 
         self._i = reservation.instances[0]
         self._i.add_tag('Name', self.name)
-        result = mgr.additional_attrs(self, resource={'instance': self._i})
+        result = mgr.additional_attrs(self, resource={'instance': self._i}, number=res.number)
         if wait:
             self.poll_until('running')
 

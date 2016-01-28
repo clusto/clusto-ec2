@@ -100,19 +100,19 @@ class EC2ConnectionManager(ResourceManager):
         """
 
         for name, val in resource.items():
-            data = None
             if isinstance(val, ec2.instance.Instance):
                 data = self._instance_to_dict(val)
             elif isinstance(val, ec2.securitygroup.SecurityGroup):
                 data = self._security_group_to_dict(val)
             else:
-                pass
+                data = None
+
+            logging.debug(data)
             if data:
-                self.set_resource_attr(
-                    thing,
-                    resource,
+                thing.add_attr(
+                    key=self._attr_name,
+                    subkey=name,
                     number=number,
-                    key=name,
                     value=data
                 )
                 return data

@@ -5,6 +5,7 @@
 #
 
 from boto import ec2
+from clusto import get_entities
 from clusto.drivers.base import ResourceManager
 from clusto.exceptions import ResourceException
 
@@ -100,19 +101,19 @@ class EC2ConnectionManager(ResourceManager):
         """
 
         for name, val in resource.items():
-            data = None
             if isinstance(val, ec2.instance.Instance):
                 data = self._instance_to_dict(val)
             elif isinstance(val, ec2.securitygroup.SecurityGroup):
                 data = self._security_group_to_dict(val)
             else:
-                pass
+                data = None
+
+            logging.debug(data)
             if data:
-                self.set_resource_attr(
-                    thing,
-                    resource,
+                thing.add_attr(
+                    key=self._attr_name,
+                    subkey=name,
                     number=number,
-                    key=name,
                     value=data
                 )
                 return data
@@ -133,3 +134,27 @@ class EC2ConnectionManager(ResourceManager):
         ) or 'us-east-1'
 
         return (self._connection_to_dict(self._connection(region)), True)
+
+    def reconcile_additional_attrs(self):
+        """
+        Will correct the number of any incorrectly set attributes from
+        additional attributes that share the resourcemanager's attr_key.
+        """
+        for ref in self.references():
+            thing = get_entities([ref.entity.name])[0]
+            for attr in thing.attrs(self._attr_name):
+                if not attr.number == ref.number:
+                    print 'Changing {0}\'s incorrect attribute...'.format(thing.name)
+                    thing.set_attr(
+                        key=attr.key,
+                        subkey=attr.subkey,
+                        # Replicate all values except the number.
+                        number=ref.number,
+                        value=attr.value
+                    )
+                    thing.del_attrs(
+                        key=attr.key,
+                        subkey=attr.subkey,
+                        number=attr.number,
+                        value=attr.value
+                    )

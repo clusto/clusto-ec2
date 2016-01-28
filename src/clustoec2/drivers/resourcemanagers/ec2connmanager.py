@@ -5,6 +5,7 @@
 #
 
 from boto import ec2
+from clusto import get_entities
 from clusto.drivers.base import ResourceManager
 from clusto.exceptions import ResourceException
 
@@ -140,13 +141,20 @@ class EC2ConnectionManager(ResourceManager):
         additional attributes that share the resourcemanager's attr_key.
         """
         for ref in self.references():
-            thing = clusto.get_entities([ref.entity.name])[0]
+            thing = get_entities([ref.entity.name])[0]
             for attr in thing.attrs(self._attr_name):
                 if not attr.number == ref.number:
+                    print 'Changing {0}\'s incorrect attribute...'.format(thing.name)
                     thing.set_attr(
                         key=attr.key,
                         subkey=attr.subkey,
                         # Replicate all values except the number.
                         number=ref.number,
+                        value=attr.value
+                    )
+                    thing.del_attrs(
+                        key=attr.key,
+                        subkey=attr.subkey,
+                        number=attr.number,
                         value=attr.value
                     )
